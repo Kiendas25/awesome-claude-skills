@@ -15,7 +15,16 @@ export default {
         accent: '#22d3ee',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        // System font stack — no web font download, fully offline.
+        // (San Francisco on iOS/macOS, Segoe UI on Windows, Roboto on Android.)
+        sans: [
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'Segoe UI',
+          'Roboto',
+          'sans-serif',
+        ],
       },
     },
   },

@@ -115,7 +115,7 @@ export function drawOverlay(
     ctx.translate(-cx, -cy);
   }
 
-  ctx.font = `800 ${o.fontSize}px Inter, system-ui, sans-serif`;
+  ctx.font = `800 ${o.fontSize}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const lines = wrapText(ctx, o.text, maxWidth);

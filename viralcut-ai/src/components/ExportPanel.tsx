@@ -64,7 +64,12 @@ export function ExportPanel() {
       if (convertMp4 && ext !== 'mp4') {
         if (!isCrossOriginIsolated()) {
           throw new Error(
-            'MP4 conversion needs Cross-Origin Isolation headers. Use `npm run dev` / `npm run preview` — they set those headers automatically. Fast export still works in any host.'
+            'FFmpeg MP4 conversion needs Cross-Origin Isolation + internet (first load). On iPhone, your Full/Draft export is already MP4, so just use those — no conversion needed.'
+          );
+        }
+        if (!navigator.onLine) {
+          throw new Error(
+            'FFmpeg core downloads on first use and you appear to be offline. Use Full/Draft export instead (already MP4 on iOS).'
           );
         }
         setPhase('transcoding');

@@ -1,7 +1,17 @@
 import { create } from 'zustand';
-import type { Clip, MusicTrack, Project, Screen, Template, TextOverlay, TextPosition } from '../types';
+import type {
+  Clip,
+  MusicTrack,
+  Project,
+  Screen,
+  StoredProjectMeta,
+  Template,
+  TextOverlay,
+  TextPosition,
+} from '../types';
 import { uid } from '../utils/format';
 import { saveProjectMeta } from './storage';
+import { saveBlob, loadBlob, deleteBlob } from './opfs';
 import { getTemplate } from '../templates';
 
 function newProject(name: string): Project {
@@ -18,7 +28,6 @@ function newProject(name: string): Project {
   };
 }
 
-/** Total trimmed duration of all clips. */
 export function totalDuration(clips: Clip[]): number {
   return clips.reduce((s, c) => s + Math.max(0, c.trimEnd - c.trimStart), 0);
 }
@@ -33,6 +42,9 @@ interface AppState {
   createProject: (name?: string) => void;
   closeProject: () => void;
   renameProject: (name: string) => void;
+
+  /** Restore a previously saved project from OPFS. Returns missing clip names. */
+  restoreProject: (meta: StoredProjectMeta) => Promise<string[]>;
 
   addClipFromFile: (file: File) => Promise<void>;
   removeClip: (id: string) => void;
@@ -88,6 +100,61 @@ export const useStore = create<AppState>((set, get) => ({
     saveProjectMeta(next);
   },
 
+  restoreProject: async (meta) => {
+    const missing: string[] = [];
+    const clips: Clip[] = [];
+
+    for (const cm of meta.clips) {
+      const blob = await loadBlob(cm.id);
+      const url = blob ? URL.createObjectURL(blob) : '';
+      if (!blob) missing.push(cm.name);
+      clips.push({
+        id: cm.id,
+        name: cm.name,
+        url,
+        duration: cm.duration,
+        trimStart: cm.trimStart,
+        trimEnd: cm.trimEnd,
+        volume: cm.volume,
+        transition: cm.transition ?? 'cut',
+      });
+    }
+
+    let music: MusicTrack | null = null;
+    if (meta.musicMeta) {
+      const blob = await loadBlob(meta.musicMeta.id);
+      if (blob) {
+        music = {
+          id: meta.musicMeta.id,
+          name: meta.musicMeta.name,
+          url: URL.createObjectURL(blob),
+          volume: meta.musicMeta.volume,
+        };
+      }
+    }
+
+    // Normalise overlays from older saves that lack animation field.
+    const overlays: TextOverlay[] = meta.overlays.map((o) => ({
+      ...o,
+      animation: o.animation ?? ('none' as const),
+    }));
+
+    const project: Project = {
+      id: meta.id,
+      name: meta.name,
+      createdAt: meta.createdAt,
+      updatedAt: meta.updatedAt,
+      templateId: meta.templateId,
+      clips,
+      overlays,
+      music,
+      export: meta.export,
+    };
+
+    set({ project, screen: 'editor', selectedClipId: null, selectedOverlayId: null });
+    return missing;
+  },
+
   addClipFromFile: async (file) => {
     const p = get().project;
     if (!p) return;
@@ -101,7 +168,10 @@ export const useStore = create<AppState>((set, get) => ({
       trimStart: 0,
       trimEnd: duration || 0,
       volume: 1,
+      transition: 'cut',
     };
+    // Persist to OPFS in the background — don't block the UI.
+    saveBlob(clip.id, file).catch(console.warn);
     const next = { ...p, clips: [...p.clips, clip], updatedAt: Date.now() };
     set({ project: next, selectedClipId: clip.id });
     saveProjectMeta(next);
@@ -111,7 +181,10 @@ export const useStore = create<AppState>((set, get) => ({
     const p = get().project;
     if (!p) return;
     const clip = p.clips.find((c) => c.id === id);
-    if (clip) URL.revokeObjectURL(clip.url);
+    if (clip) {
+      URL.revokeObjectURL(clip.url);
+      deleteBlob(id).catch(() => {});
+    }
     const next = { ...p, clips: p.clips.filter((c) => c.id !== id), updatedAt: Date.now() };
     set({
       project: next,
@@ -131,6 +204,7 @@ export const useStore = create<AppState>((set, get) => ({
       updatedAt: Date.now(),
     };
     set({ project: next });
+    saveProjectMeta(next);
   },
 
   moveClip: (id, dir) => {
@@ -174,7 +248,7 @@ export const useStore = create<AppState>((set, get) => ({
       color: '#ffffff',
       background: true,
     };
-    const overlay: TextOverlay = {
+    const base: TextOverlay = {
       id: uid('o_'),
       text: 'Tap to edit text',
       position: style.position,
@@ -183,8 +257,9 @@ export const useStore = create<AppState>((set, get) => ({
       background: style.background,
       start: 0,
       end: Math.min(total, 3),
-      ...partial,
+      animation: 'none',
     };
+    const overlay: TextOverlay = { ...base, ...partial };
     const next = { ...p, overlays: [...p.overlays, overlay], updatedAt: Date.now() };
     set({ project: next, selectedOverlayId: overlay.id });
     saveProjectMeta(next);
@@ -218,8 +293,19 @@ export const useStore = create<AppState>((set, get) => ({
   setMusicFromFile: async (file) => {
     const p = get().project;
     if (!p) return;
-    if (p.music) URL.revokeObjectURL(p.music.url);
-    const music: MusicTrack = { name: file.name, url: URL.createObjectURL(file), volume: 0.7 };
+    // Clean up previous music from OPFS.
+    if (p.music) {
+      URL.revokeObjectURL(p.music.url);
+      deleteBlob(p.music.id).catch(() => {});
+    }
+    const musicId = uid('m_');
+    saveBlob(musicId, file).catch(console.warn);
+    const music: MusicTrack = {
+      id: musicId,
+      name: file.name,
+      url: URL.createObjectURL(file),
+      volume: 0.7,
+    };
     const next = { ...p, music, updatedAt: Date.now() };
     set({ project: next });
     saveProjectMeta(next);
@@ -229,12 +315,16 @@ export const useStore = create<AppState>((set, get) => ({
     const p = get().project;
     if (!p || !p.music) return;
     set({ project: { ...p, music: { ...p.music, volume: v } } });
+    saveProjectMeta({ ...p, music: { ...p.music, volume: v } });
   },
 
   removeMusic: () => {
     const p = get().project;
     if (!p) return;
-    if (p.music) URL.revokeObjectURL(p.music.url);
+    if (p.music) {
+      URL.revokeObjectURL(p.music.url);
+      deleteBlob(p.music.id).catch(() => {});
+    }
     const next = { ...p, music: null, updatedAt: Date.now() };
     set({ project: next });
     saveProjectMeta(next);
@@ -252,12 +342,12 @@ export const useStore = create<AppState>((set, get) => ({
       background: t.textStyle.background,
       start: i * t.suggestedClipSeconds,
       end: (i + 1) * t.suggestedClipSeconds,
+      animation: 'fade-in' as const,
     }));
     const next: Project = {
       ...p,
       templateId: t.id,
       export: { ...t.export },
-      // Keep existing overlays, append the template's starters.
       overlays: [...p.overlays, ...starter],
       updatedAt: Date.now(),
     };

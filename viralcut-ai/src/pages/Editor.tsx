@@ -5,9 +5,11 @@ import { VideoPreview } from '../components/VideoPreview';
 import { Timeline } from '../components/Timeline';
 import { ClipInspector } from '../components/ClipInspector';
 import { OverlayPanel } from '../components/OverlayPanel';
+import { AutoCaptionPanel } from '../components/AutoCaptionPanel';
 import { MusicPanel } from '../components/MusicPanel';
 import { ExportPanel } from '../components/ExportPanel';
 import { getTemplate } from '../templates';
+import { isSupported as opfsSupported } from '../lib/opfs';
 
 export function Editor() {
   const project = useStore((s) => s.project);
@@ -64,6 +66,12 @@ export function Editor() {
           aria-label="Project name"
         />
 
+        {opfsSupported() && (
+          <p className="text-center text-[11px] text-emerald-500/80">
+            ✅ Media auto-saved — clips will survive page reloads
+          </p>
+        )}
+
         <VideoPreview />
 
         <button onClick={() => fileRef.current?.click()} className="btn-ghost w-full">
@@ -73,6 +81,7 @@ export function Editor() {
         <Timeline />
         <ClipInspector />
         <OverlayPanel />
+        <AutoCaptionPanel />
         <MusicPanel />
         <ExportPanel />
       </div>

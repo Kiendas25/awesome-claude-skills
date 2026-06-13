@@ -1,11 +1,7 @@
-import type { Project, StoredProjectMeta } from '../types';
+import type { Project, StoredProjectMeta, StoredClipMeta } from '../types';
+import { deleteBlob } from './opfs';
 
-// Local-first persistence. We store project *metadata* in localStorage so the
-// list survives reloads. Media blobs (object URLs) cannot be persisted this way,
-// so reopening a saved project asks the user to re-attach their video.
-// This keeps the MVP free of any database/cloud dependency.
-
-const KEY = 'viralcut.projects.v1';
+const KEY = 'viralcut.projects.v2';
 
 export function loadProjectMetas(): StoredProjectMeta[] {
   try {
@@ -20,25 +16,43 @@ export function loadProjectMetas(): StoredProjectMeta[] {
 
 export function saveProjectMeta(project: Project): void {
   const metas = loadProjectMetas().filter((m) => m.id !== project.id);
+  const clips: StoredClipMeta[] = project.clips.map((c) => ({
+    id: c.id,
+    name: c.name,
+    duration: c.duration,
+    trimStart: c.trimStart,
+    trimEnd: c.trimEnd,
+    volume: c.volume,
+    transition: c.transition,
+  }));
   const meta: StoredProjectMeta = {
     id: project.id,
     name: project.name,
     createdAt: project.createdAt,
     updatedAt: Date.now(),
     templateId: project.templateId,
-    clipCount: project.clips.length,
+    clips,
     overlays: project.overlays,
+    musicMeta: project.music
+      ? { id: project.music.id, name: project.music.name, volume: project.music.volume }
+      : null,
     export: project.export,
   };
   metas.push(meta);
   try {
     localStorage.setItem(KEY, JSON.stringify(metas));
   } catch {
-    // Quota or private-mode failure — non-fatal for the MVP.
+    // Quota exceeded — non-fatal.
   }
 }
 
-export function deleteProjectMeta(id: string): void {
-  const metas = loadProjectMetas().filter((m) => m.id !== id);
-  localStorage.setItem(KEY, JSON.stringify(metas));
+/** Remove project metadata AND all associated OPFS blobs. */
+export async function deleteProjectMeta(id: string): Promise<void> {
+  const metas = loadProjectMetas();
+  const target = metas.find((m) => m.id === id);
+  if (target) {
+    for (const c of target.clips) await deleteBlob(c.id);
+    if (target.musicMeta) await deleteBlob(target.musicMeta.id);
+  }
+  localStorage.setItem(KEY, JSON.stringify(metas.filter((m) => m.id !== id)));
 }

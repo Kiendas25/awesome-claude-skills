@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore, totalDuration } from '../lib/store';
 import { exportTimeline } from '../lib/export';
 import { transcodeToMp4, isCrossOriginIsolated } from '../lib/ffmpeg';
@@ -6,26 +6,39 @@ import { fmtTime, fmtBytes } from '../utils/format';
 
 type Phase = 'idle' | 'rendering' | 'transcoding' | 'done' | 'error';
 
-// Export flow: record the timeline (canvas + audio), then optionally convert
-// the WebM to MP4 with FFmpeg.wasm.
 export function ExportPanel() {
   const project = useStore((s) => s.project);
   const [phase, setPhase] = useState<Phase>('idle');
   const [progress, setProgress] = useState(0);
-  const [result, setResult] = useState<{ url: string; ext: string; size: number } | null>(null);
+  const [eta, setEta] = useState('');
+  const [result, setResult] = useState<{ url: string; ext: string; size: number; draft: boolean } | null>(null);
   const [error, setError] = useState('');
   const [log, setLog] = useState('');
+  const [tabHidden, setTabHidden] = useState(false);
 
   const clips = project?.clips ?? [];
   const total = totalDuration(clips);
-  const canExport = clips.length > 0 && total > 0;
+  const canExport = clips.length > 0 && total > 0 && clips.every((c) => c.url);
 
-  async function run(convertMp4: boolean) {
+  // Warn when the user backgrounds the tab during export.
+  useEffect(() => {
+    const handler = () => setTabHidden(document.hidden);
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, []);
+
+  // ETA: estimated seconds remaining based on progress and elapsed.
+  const startTimeRef = { current: 0 };
+
+  async function run(draft: boolean, convertMp4 = false) {
     if (!project || !canExport) return;
     setPhase('rendering');
     setProgress(0);
+    setEta('');
     setError('');
     setResult(null);
+    startTimeRef.current = Date.now();
+
     try {
       const out = await exportTimeline({
         clips: project.clips,
@@ -34,7 +47,15 @@ export function ExportPanel() {
         width: project.export.width,
         height: project.export.height,
         fps: project.export.fps,
-        onProgress: setProgress,
+        draft,
+        onProgress: (r) => {
+          setProgress(r);
+          if (r > 0.02) {
+            const elapsed = (Date.now() - startTimeRef.current) / 1000;
+            const remaining = (elapsed / r) * (1 - r);
+            setEta(remaining > 2 ? `~${Math.ceil(remaining)}s left` : '');
+          }
+        },
       });
 
       let blob = out.blob;
@@ -43,7 +64,7 @@ export function ExportPanel() {
       if (convertMp4 && ext !== 'mp4') {
         if (!isCrossOriginIsolated()) {
           throw new Error(
-            'MP4 conversion needs cross-origin isolation. Use `npm run dev` / `npm run preview` (headers are set there), then retry.'
+            'MP4 conversion needs Cross-Origin Isolation headers. Use `npm run dev` / `npm run preview` — they set those headers automatically. Fast export still works in any host.'
           );
         }
         setPhase('transcoding');
@@ -53,12 +74,13 @@ export function ExportPanel() {
       }
 
       const url = URL.createObjectURL(blob);
-      setResult({ url, ext, size: blob.size });
+      setResult({ url, ext, size: blob.size, draft: out.draft });
       setPhase('done');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setPhase('error');
     }
+    setEta('');
   }
 
   const busy = phase === 'rendering' || phase === 'transcoding';
@@ -72,11 +94,17 @@ export function ExportPanel() {
         </span>
       </div>
 
+      {busy && tabHidden && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-2 text-sm text-amber-300">
+          ⚠️ Tab is hidden — export may slow or pause. Switch back to this tab.
+        </div>
+      )}
+
       {busy && (
         <div>
           <div className="mb-1 flex justify-between text-xs text-slate-400">
             <span>{phase === 'rendering' ? 'Recording timeline…' : 'Converting to MP4…'}</span>
-            <span>{Math.round(progress * 100)}%</span>
+            <span>{eta || `${Math.round(progress * 100)}%`}</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-panel2">
             <div
@@ -86,7 +114,7 @@ export function ExportPanel() {
           </div>
           {phase === 'rendering' && (
             <p className="mt-1 text-[11px] text-slate-500">
-              Recording plays the video through in real time — keep this tab focused.
+              Recording plays through in real time. Draft mode is ~4× faster at half resolution.
             </p>
           )}
           {log && phase === 'transcoding' && (
@@ -98,16 +126,22 @@ export function ExportPanel() {
       {phase === 'done' && result && (
         <div className="space-y-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3">
           <p className="text-sm text-emerald-300">
-            ✅ Export ready · {result.ext.toUpperCase()} · {fmtBytes(result.size)}
+            ✅ {result.draft ? '(Draft) ' : ''}Export ready · {result.ext.toUpperCase()} ·{' '}
+            {fmtBytes(result.size)}
           </p>
           <video src={result.url} controls className="w-full rounded-lg" />
           <a
             href={result.url}
-            download={`${(project?.name || 'viralcut').replace(/\s+/g, '_')}.${result.ext}`}
-            className="btn-primary w-full text-sm"
+            download={`${(project?.name || 'viralcut').replace(/\s+/g, '_')}${result.draft ? '_draft' : ''}.${result.ext}`}
+            className="btn-primary block w-full text-center text-sm"
           >
             ⬇ Download {result.ext.toUpperCase()}
           </a>
+          {result.draft && (
+            <p className="text-xs text-slate-400">
+              This is a draft preview at 540×960. Export at full quality when ready.
+            </p>
+          )}
         </div>
       )}
 
@@ -118,16 +152,28 @@ export function ExportPanel() {
       )}
 
       {!busy && (
-        <div className="grid grid-cols-1 gap-2">
+        <div className="space-y-2">
           <button onClick={() => run(false)} disabled={!canExport} className="btn-primary w-full">
-            ⚡ Export video (fast, WebM/MP4)
+            ⚡ Full export — {project?.export.width}×{project?.export.height}
           </button>
           <button onClick={() => run(true)} disabled={!canExport} className="btn-ghost w-full text-sm">
-            🎬 Export as MP4 (FFmpeg.wasm)
+            🚀 Draft export — 540×960 (~4× faster)
           </button>
+          <button
+            onClick={() => run(false, true)}
+            disabled={!canExport}
+            className="btn-ghost w-full text-sm"
+          >
+            🎬 Full export → MP4 via FFmpeg.wasm
+          </button>
+          {!canExport && clips.some((c) => !c.url) && (
+            <p className="text-xs text-amber-400">
+              Some clips are missing media. Re-upload them or restore the project.
+            </p>
+          )}
           <p className="text-[11px] text-slate-500">
-            Fast export uses your browser's recorder. MP4 export converts the result with
-            FFmpeg.wasm (downloads ~30&nbsp;MB core on first use).
+            Full export = real-time recording. Draft is 4× faster. FFmpeg MP4 requires
+            cross-origin-isolation headers (set automatically by Vite dev/preview).
           </p>
         </div>
       )}

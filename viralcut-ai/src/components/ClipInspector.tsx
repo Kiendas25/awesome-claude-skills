@@ -1,7 +1,11 @@
 import { useStore } from '../lib/store';
 import { fmtTime, clamp } from '../utils/format';
+import type { TransitionType } from '../types';
 
-// Trim / split / volume controls for the currently selected clip.
+const TRANSITIONS: { id: TransitionType; label: string; desc: string }[] = [
+  { id: 'cut', label: '✂️ Cut', desc: 'Instant switch (default)' },
+  { id: 'fade', label: '🌑 Fade', desc: 'Fade to black then in' },
+];
 
 export function ClipInspector() {
   const project = useStore((s) => s.project);
@@ -13,22 +17,43 @@ export function ClipInspector() {
   if (!clip) {
     return (
       <div className="card text-sm text-slate-400">
-        Select a clip in the timeline to trim, split or adjust its volume.
+        Select a clip in the timeline to trim, split, set transition, or adjust volume.
       </div>
     );
   }
 
   const dur = clip.duration || clip.trimEnd;
   const mid = (clip.trimStart + clip.trimEnd) / 2;
+  const clipDur = clip.trimEnd - clip.trimStart;
+  const clipIdx = project!.clips.findIndex((c) => c.id === clip.id);
 
   return (
     <div className="card space-y-4">
       <div className="flex items-center justify-between">
         <span className="label mb-0">Edit clip</span>
-        <span className="font-mono text-xs text-slate-500">
-          {fmtTime(clip.trimEnd - clip.trimStart, true)}
-        </span>
+        <span className="font-mono text-xs text-slate-500">{fmtTime(clipDur, true)}</span>
       </div>
+
+      {/* Transition (only meaningful for clip index > 0) */}
+      {clipIdx > 0 && (
+        <div>
+          <label className="label">Transition in</label>
+          <div className="flex gap-2">
+            {TRANSITIONS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => updateClip(clip.id, { transition: t.id })}
+                title={t.desc}
+                className={`chip flex-1 text-center ${
+                  (clip.transition ?? 'cut') === t.id ? 'border-brand text-brand-glow' : ''
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div>
         <label className="label">Trim start · {fmtTime(clip.trimStart, true)}</label>

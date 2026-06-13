@@ -89,3 +89,24 @@ input[type='range']::-moz-range-thumb {
   background: #2a2a3d;
   border-radius: 999px;
 }
+
+/* ── Overlay entrance animations (used by VideoPreview) ── */
+@keyframes overlayFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes overlaySlideUp {
+  from { opacity: 0; transform: translateY(40px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes overlayPop {
+  0%   { opacity: 0; transform: scale(0.7); }
+  65%  { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.anim-fade-in  { animation: overlayFadeIn  0.45s ease-out both; }
+.anim-slide-up { animation: overlaySlideUp 0.4s  cubic-bezier(0.16,1,0.3,1) both; }
+.anim-pop      { animation: overlayPop     0.3s  cubic-bezier(0.34,1.56,0.64,1) both; }

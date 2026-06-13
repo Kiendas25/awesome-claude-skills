@@ -1,11 +1,17 @@
 import { useStore, totalDuration } from '../lib/store';
-import type { TextPosition } from '../types';
+import type { AnimationType, TextPosition } from '../types';
 import { fmtTime, clamp } from '../utils/format';
 
 const POSITIONS: TextPosition[] = ['top', 'center', 'bottom'];
 const COLORS = ['#ffffff', '#22d3ee', '#7c5cff', '#fbbf24', '#f43f5e', '#000000'];
 
-// Add / edit text overlays and manual captions.
+const ANIMATIONS: { id: AnimationType; label: string }[] = [
+  { id: 'none', label: 'None' },
+  { id: 'fade-in', label: '✨ Fade' },
+  { id: 'slide-up', label: '⬆ Slide' },
+  { id: 'pop', label: '💥 Pop' },
+];
+
 export function OverlayPanel() {
   const project = useStore((s) => s.project);
   const selectedOverlayId = useStore((s) => s.selectedOverlayId);
@@ -27,7 +33,7 @@ export function OverlayPanel() {
             + Text
           </button>
           <button
-            onClick={() => addOverlay({ position: 'bottom', text: 'Caption goes here' })}
+            onClick={() => addOverlay({ position: 'bottom', text: 'Caption goes here', animation: 'fade-in' })}
             className="chip border-accent text-accent"
           >
             + Caption
@@ -80,6 +86,23 @@ export function OverlayPanel() {
           </div>
 
           <div>
+            <label className="label">Entrance animation</label>
+            <div className="flex flex-wrap gap-2">
+              {ANIMATIONS.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => updateOverlay(selected.id, { animation: a.id })}
+                  className={`chip ${
+                    selected.animation === a.id ? 'border-brand text-brand-glow' : ''
+                  }`}
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
             <label className="label">Font size · {selected.fontSize}px</label>
             <input
               type="range"
@@ -93,7 +116,7 @@ export function OverlayPanel() {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="label mb-0">Color</span>
+            <span className="label mb-0 shrink-0">Color</span>
             {COLORS.map((c) => (
               <button
                 key={c}

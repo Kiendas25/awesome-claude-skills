@@ -1,0 +1,91 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-ink text-slate-100 font-sans antialiased;
+  margin: 0;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Respect device safe areas (notch / home indicator). */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3
+      font-semibold transition active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100;
+  }
+  .btn-primary {
+    @apply btn bg-brand text-white shadow-lg shadow-brand/30 hover:bg-brand-glow;
+  }
+  .btn-ghost {
+    @apply btn bg-panel2 text-slate-200 hover:bg-edge;
+  }
+  .card {
+    @apply rounded-2xl border border-edge bg-panel p-4;
+  }
+  .input {
+    @apply w-full rounded-xl border border-edge bg-panel2 px-3 py-2 text-sm
+      text-slate-100 placeholder:text-slate-500 focus:border-brand focus:outline-none;
+  }
+  .chip {
+    @apply rounded-full border border-edge bg-panel2 px-3 py-1 text-xs text-slate-300;
+  }
+  .label {
+    @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400;
+  }
+}
+
+/* Range input styling for the dark timeline controls. */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: #2a2a3d;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 18px;
+  width: 18px;
+  border-radius: 50%;
+  background: #7c5cff;
+  cursor: pointer;
+  border: 2px solid #fff;
+}
+input[type='range']::-moz-range-thumb {
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: #7c5cff;
+  cursor: pointer;
+  border: 2px solid #fff;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a3d;
+  border-radius: 999px;
+}

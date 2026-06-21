@@ -77,6 +77,12 @@ DASHBOARD_HTML = """
   <button onclick="act('discover','POST','/agents/learning/discover',{symbol:'BTC/USDT'})">Discover &amp; promote</button>
   <button onclick="act('promotion','GET','/agents/learning/promotion')">Latest promotion</button>
   <div class="warn">Promotion = survived an unseen test once. NOT a profit promise.</div></div>
+ <div class="card" style="grid-column:1/3"><h3>5 · Autopilot <span class="muted" style="font-size:12px">(autonomous research — paper only)</span></h3>
+  <div class="sub">Runs the loop by itself: refresh data → discover → paper-trade → analyze, on repeat. Promotions are surfaced for your approval. Never goes live; kill switch stops it.</div>
+  <button onclick="startAuto()">▶ Start autopilot</button>
+  <button onclick="stopAuto()">⏹ Stop</button>
+  <button onclick="act('autopilot','POST','/autopilot/approve')">✔ Approve latest promotion</button>
+  <div class="result" id="autopilot" style="margin-top:10px"><span class="muted">Autopilot is idle.</span></div></div>
  <div class="card" style="grid-column:1/3"><h3>Result</h3>
   <div class="result" id="out"><span class="muted">Pick an action above. Tip: do them in order 1 → 2 → 3 → 4.</span></div></div>
 </main>
@@ -135,8 +141,46 @@ const R={
    ['Can enable live?',d.can_enable_live?'YES':'NO (locked)','good']])+
    '<div class="warn">All proposals need your manual approval. The agent never trades live.</div>'+raw(d),
  discover:d=>renderPromotion(d),
- promotion:d=>renderPromotion(d)
+ promotion:d=>renderPromotion(d),
+ autopilot:d=>{ pollAuto(); const ok=d.approved?'good':'muted'; return head('Approval',ok)+'<div class="warn '+ok+'">'+(d.note||'')+'</div>'; }
 };
+function renderAuto(d){
+ const last=d.last_summary||{};
+ const pend=(d.pending_approvals||[]).length;
+ let html=head(d.running?`Autopilot running · cycle ${d.cycle}`:`Autopilot stopped · ${d.cycle} cycles done`,d.running?'good':'muted');
+ html+=facts([
+   ['Status',d.running?'RUNNING':'stopped',d.running?'good':'muted'],
+   ['Symbol',d.symbol],
+   ['Last cycle verdict',last.promoted==null?'—':(last.promoted?'PROMOTED ✅':'no edge found'),last.promoted?'good':'muted'],
+   ['Last paper equity',last.paper_equity==null?'—':money(last.paper_equity)],
+   ['Promotions awaiting approval',pend,pend?'good':'muted'],
+   ['Approved (paper only)',d.n_approved],
+   ['Can enable live?','NO (locked)','good']]);
+ if(pend){const p=d.pending_approvals[d.pending_approvals.length-1];
+   html+='<div class="warn good">Pending: '+(p.survivors||[]).join(', ')+' — holdout return '+pct((p.holdout_metrics||{}).total_return)+'. Click "Approve latest promotion" to accept (paper only).</div>';}
+ if(d.last_error)html+='<div class="warn bad">last error: '+d.last_error+'</div>';
+ html+='<div class="warn">Autonomous research only · paper money · live disabled · kill switch overrides.</div>';
+ return html;
+}
+let _autoTimer=null;
+async function pollAuto(){
+ try{const d=await(await fetch('/autopilot/status')).json();
+   document.getElementById('autopilot').innerHTML=renderAuto(d);
+   if(!d.running&&_autoTimer){clearInterval(_autoTimer);_autoTimer=null;}
+ }catch(e){}
+}
+async function startAuto(){
+ const el=document.getElementById('autopilot');el.innerHTML='<span class="muted">Starting autopilot…</span>';
+ await fetch('/autopilot/start',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({symbol:'BTC/USDT',interval_seconds:20,drift:0.0008})});
+ if(!_autoTimer)_autoTimer=setInterval(pollAuto,4000);
+ pollAuto();
+}
+async function stopAuto(){
+ await fetch('/autopilot/stop',{method:'POST'});
+ if(_autoTimer){clearInterval(_autoTimer);_autoTimer=null;}
+ pollAuto();
+}
 function renderPromotion(d){
  if(d.note&&d.promoted==null) return head('No discovery run yet','muted')+'<div class="warn">'+d.note+'</div>';
  const m=d.holdout_metrics||{};

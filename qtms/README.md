@@ -134,6 +134,10 @@ high drawdown.
 - Validation & anti-overfitting: train/test split, walk-forward, bootstrap CIs,
   parameter sensitivity heatmap, regime performance, deflated-Sharpe and PBO
   placeholders, hard pass/fail gates.
+- Research **autopilot**: an autonomous, paper-only background loop (refresh data
+  → discover & promote on unseen data → paper-trade → analyze → report) that
+  surfaces promotions for manual approval. It cannot enable live trading and the
+  kill switch stops it (`/autopilot/start|stop|status|approve`).
 - Off-path learning supervisor + analyzers/reviewers producing proposals only,
   with before/after Monte Carlo and an overfitting-risk score; writes Obsidian
   notes + a recommendations file. **Cannot** enable live or place orders.

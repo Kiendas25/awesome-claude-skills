@@ -13,6 +13,7 @@ from ..app.safety import (
     evaluate_live_gate,
 )
 from ..app.state import STATE
+from ..agents.autopilot import get_autopilot
 from ..agents.learning_supervisor import LearningSupervisor
 from ..data.market_data import MarketDataAdapter, monte_carlo_data_robustness
 from ..data.storage import load_json
@@ -55,6 +56,14 @@ class PaperRunReq(BaseModel):
 class AnalyzeReq(BaseModel):
     symbol: str = "BTC/USDT"
     run_validation: bool = True
+
+
+class AutopilotReq(BaseModel):
+    symbol: str = "BTC/USDT"
+    interval_seconds: float = 20.0
+    drift: float = 0.0008
+    n_candles: int = 1200
+    paper_steps: int = 12
 
 
 @router.get("/health")
@@ -197,6 +206,33 @@ def learning_discover(req: AnalyzeReq):
 @router.get("/agents/learning/promotion")
 def learning_promotion():
     return LearningSupervisor.latest_promotion() or {"note": "no discovery run yet"}
+
+
+@router.post("/autopilot/start")
+def autopilot_start(req: AutopilotReq):
+    """Start the autonomous RESEARCH loop (paper-only). It discovers, paper
+    trades, analyzes, and surfaces promotions for manual approval. It can never
+    enable live trading and the kill switch stops it."""
+    return get_autopilot().start(
+        symbol=req.symbol, interval_seconds=req.interval_seconds,
+        drift=req.drift, n_candles=req.n_candles, paper_steps=req.paper_steps,
+    )
+
+
+@router.post("/autopilot/stop")
+def autopilot_stop():
+    return get_autopilot().stop()
+
+
+@router.get("/autopilot/status")
+def autopilot_status():
+    return get_autopilot().status()
+
+
+@router.post("/autopilot/approve")
+def autopilot_approve():
+    """Manually approve the latest promotion (for PAPER use only)."""
+    return get_autopilot().approve_latest()
 
 
 @router.post("/live/request-approval")

@@ -31,7 +31,9 @@ def write_note(title: str, body: str, tags: list[str] | None = None, subfolder: 
         f"> ⚠️ Research artifact. No profit is promised. Live trading disabled by default.\n\n"
         f"---\n\n"
     )
-    path.write_text(header + body)
+    # Force UTF-8: notes contain emoji/symbols that Windows' default cp1252
+    # codec cannot encode.
+    path.write_text(header + body, encoding="utf-8")
     return str(path)
 
 

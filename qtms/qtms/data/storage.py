@@ -50,8 +50,9 @@ def load_candles(symbol: str) -> pd.DataFrame | None:
 def save_json(name: str, obj: Any) -> str:
     path = _root() / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(obj, f, indent=2, default=str)
+    # UTF-8 + ensure_ascii=False so symbols round-trip on Windows (cp1252 default).
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2, default=str, ensure_ascii=False)
     return str(path)
 
 
@@ -59,5 +60,5 @@ def load_json(name: str, default: Any = None) -> Any:
     path = _root() / name
     if not path.exists():
         return default
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)

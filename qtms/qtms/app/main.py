@@ -28,51 +28,146 @@ DASHBOARD_HTML = """
  body{font-family:system-ui,Arial;margin:0;background:#0b0e14;color:#cdd6f4}
  header{padding:16px 24px;background:#11151f;border-bottom:1px solid #1e2430}
  h1{font-size:18px;margin:0}
+ h3{margin:0 0 4px}
+ .sub{color:#7f849c;font-size:12px;margin:2px 0 10px}
  .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;margin-left:8px}
  .paper{background:#1d3a2a;color:#a6e3a1}.live-off{background:#3a1d1d;color:#f38ba8}
  main{padding:24px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
  .card{background:#11151f;border:1px solid #1e2430;border-radius:8px;padding:16px}
- button{background:#1e66f5;color:#fff;border:0;padding:8px 12px;border-radius:6px;cursor:pointer;margin:4px 0}
- pre{background:#0b0e14;padding:10px;border-radius:6px;overflow:auto;max-height:260px;font-size:12px}
- .warn{color:#f9e2af;font-size:12px}
+ button{background:#1e66f5;color:#fff;border:0;padding:8px 12px;border-radius:6px;cursor:pointer;margin:4px 6px 4px 0;font-size:13px}
+ button:hover{background:#3a7bff}
+ .warn{color:#f9e2af;font-size:12px;margin-top:8px}
+ .result{background:#0b0e14;border:1px solid #1e2430;border-radius:8px;padding:16px;min-height:80px}
+ .headline{font-size:20px;font-weight:600;margin-bottom:10px}
+ .good{color:#a6e3a1}.bad{color:#f38ba8}.neutral{color:#89b4fa}.muted{color:#7f849c}
+ .facts{list-style:none;padding:0;margin:0}
+ .facts li{padding:6px 0;border-bottom:1px solid #181c28;display:flex;justify-content:space-between;gap:16px}
+ .facts li span:first-child{color:#9399b2}
+ .facts li span:last-child{font-weight:600;text-align:right}
+ .tag{display:inline-block;background:#1e2430;border-radius:6px;padding:2px 8px;margin:2px;font-size:12px}
+ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+ td,th{padding:6px 8px;border-bottom:1px solid #181c28;text-align:left}
+ details{margin-top:12px}summary{cursor:pointer;color:#7f849c;font-size:12px}
+ pre{background:#11151f;padding:10px;border-radius:6px;overflow:auto;max-height:240px;font-size:11px}
 </style></head><body>
 <header><h1>QTMS — Quantum Trading Multi-Layer Stacking
 <span class="pill paper">RESEARCH / PAPER</span>
 <span class="pill live-off">LIVE DISABLED</span></h1>
-<div class="warn">⚠️ No profit promised. Synthetic data. No real funds. Live trading gated &amp; off by default.</div>
+<div class="warn" id="statusbar">Loading…</div>
 </header>
 <main>
- <div class="card"><h3>System</h3>
-  <button onclick="call('GET','/health','health')">Health</button>
-  <button onclick="call('POST','/data/synthetic','out',{symbol:'BTC/USDT',n:800})">Generate Data</button>
-  <button onclick="call('POST','/live/disabled-status','out')">Live Status</button>
-  <pre id="health"></pre></div>
- <div class="card"><h3>Backtest / Validation</h3>
-  <button onclick="call('POST','/backtest/run','out',{symbol:'BTC/USDT',strategy:'trend_following'})">Validate Trend</button>
-  <button onclick="call('POST','/monte-carlo/run','out',{symbol:'BTC/USDT',strategy:'mean_reversion',n_paths:200})">Monte Carlo</button></div>
- <div class="card"><h3>Paper Trading</h3>
-  <button onclick="call('POST','/paper/start','out',{symbol:'BTC/USDT',warmup:150})">Start</button>
-  <button onclick="call('POST','/paper/step','out',{steps:25})">Step x25</button>
-  <button onclick="call('GET','/paper/status','out')">Status</button>
-  <button onclick="call('GET','/paper/trades','out')">Trades</button>
-  <button onclick="call('POST','/paper/stop','out')">Stop</button></div>
- <div class="card"><h3>Learning Supervisor (off-path)</h3>
-  <button onclick="call('POST','/data/synthetic','out',{symbol:'BTC/USDT',n:1600,drift:0.0012})">Gen Trending Data</button>
-  <button onclick="call('POST','/agents/learning/analyze','out',{symbol:'BTC/USDT'})">Analyze</button>
-  <button onclick="call('POST','/agents/learning/discover','out',{symbol:'BTC/USDT'})">Discover &amp; Promote</button>
-  <button onclick="call('GET','/agents/learning/promotion','out')">Latest Promotion</button>
-  <div class="warn">Promotion = survived unseen holdout once. Not a profit promise.</div></div>
- <div class="card" style="grid-column:1/3"><h3>Output</h3><pre id="out">Click a button…</pre></div>
+ <div class="card"><h3>1 · Data</h3>
+  <div class="sub">Generate price data to work with. "Trending" data contains a real edge.</div>
+  <button onclick="act('data','POST','/data/synthetic',{symbol:'BTC/USDT',n:800})">Generate random data</button>
+  <button onclick="act('data','POST','/data/synthetic',{symbol:'BTC/USDT',n:1600,drift:0.0012})">Generate trending data</button></div>
+ <div class="card"><h3>2 · Test a strategy</h3>
+  <div class="sub">Validate one strategy and stress-test it with Monte Carlo.</div>
+  <button onclick="act('backtest','POST','/backtest/run',{symbol:'BTC/USDT',strategy:'trend_following'})">Validate trend strategy</button>
+  <button onclick="act('mc','POST','/monte-carlo/run',{symbol:'BTC/USDT',strategy:'mean_reversion',n_paths:200})">Monte Carlo</button></div>
+ <div class="card"><h3>3 · Paper trade</h3>
+  <div class="sub">Run virtual trades — no real money. Start, then step forward.</div>
+  <button onclick="act('paperStart','POST','/paper/start',{symbol:'BTC/USDT',warmup:150})">Start</button>
+  <button onclick="act('paperStep','POST','/paper/step',{steps:25})">Step forward x25</button>
+  <button onclick="act('paperStatus','GET','/paper/status')">Status</button>
+  <button onclick="act('paperTrades','GET','/paper/trades')">Trades</button>
+  <button onclick="act('paperStatus','POST','/paper/stop')">Stop</button></div>
+ <div class="card"><h3>4 · Learning agent</h3>
+  <div class="sub">The agent searches strategies and only "promotes" what survives unseen data.</div>
+  <button onclick="act('analyze','POST','/agents/learning/analyze',{symbol:'BTC/USDT'})">Analyze results</button>
+  <button onclick="act('discover','POST','/agents/learning/discover',{symbol:'BTC/USDT'})">Discover &amp; promote</button>
+  <button onclick="act('promotion','GET','/agents/learning/promotion')">Latest promotion</button>
+  <div class="warn">Promotion = survived an unseen test once. NOT a profit promise.</div></div>
+ <div class="card" style="grid-column:1/3"><h3>Result</h3>
+  <div class="result" id="out"><span class="muted">Pick an action above. Tip: do them in order 1 → 2 → 3 → 4.</span></div></div>
 </main>
 <script>
-async function call(method,url,target,body){
- const el=document.getElementById(target);el.textContent='…';
+const pct=x=>(x==null||isNaN(x))?'—':(x*100).toFixed(1)+'%';
+const n2=(x,d=2)=>(x==null||isNaN(x))?'—':Number(x).toFixed(d);
+const money=x=>(x==null||isNaN(x))?'—':'$'+Number(x).toLocaleString(undefined,{maximumFractionDigits:2});
+const cls=ok=>ok?'good':'bad';
+function robust(x){if(x>=0.7)return'strong';if(x>=0.5)return'moderate';return'weak';}
+function facts(rows){return '<ul class="facts">'+rows.map(r=>`<li><span>${r[0]}</span><span class="${r[2]||''}">${r[1]}</span></li>`).join('')+'</ul>';}
+function head(txt,c){return `<div class="headline ${c||'neutral'}">${txt}</div>`;}
+function raw(d){return `<details><summary>show raw data</summary><pre>${JSON.stringify(d,null,2)}</pre></details>`;}
+
+const R={
+ data:d=>head(`Generated ${d.rows} candles of ${d.symbol}`,'neutral')+facts([
+   ['Last price',money(d.last_close)],
+   ['Data robustness',n2((d.data_robustness||{}).robustness_score,2)+' ('+robust((d.data_robustness||{}).robustness_score)+')'],
+   ['Data quality',pct((d.data_robustness||{}).data_quality_score)]])+
+   '<div class="warn">Now try step 2 or jump to step 4.</div>'+raw(d),
+ backtest:d=>{const m=d.metrics||{};return head(d.strategy+' — '+(d.passed?'PASSED ✅':'DID NOT PASS ❌'),cls(d.passed))+facts([
+   ['Trades',m.n_trades],
+   ['Total return (after costs)',pct(m.total_return),cls(m.total_return>0)],
+   ['Win rate',pct(m.win_rate)],
+   ['Profit factor',n2(m.profit_factor)],
+   ['Max drawdown',pct(m.max_drawdown),'bad'],
+   ['Score',n2(d.score)]])+
+   (d.fail_reasons&&d.fail_reasons.length?'<div class="warn">Why it failed: '+d.fail_reasons.join('; ')+'</div>':'<div class="warn good">Cleared every validation gate.</div>')+raw(d);},
+ mc:d=>{const m=d.monte_carlo||{};return head('Monte Carlo · '+d.strategy,'neutral')+facts([
+   ['Robustness',n2(m.robustness_score)+' ('+robust(m.robustness_score)+')',cls(m.robustness_score>=0.5)],
+   ['Chance of positive expectancy',pct(m.prob_positive_expectancy)],
+   ['Risk of ruin',pct(m.risk_of_ruin),cls(m.risk_of_ruin<=0.05)],
+   ['Worst-case drawdown (95%)',pct(m.max_drawdown_p95),'bad'],
+   ['Survives higher costs',pct(m.cost_survival)],
+   ['Trades',m.n_trades]])+raw(d);},
+ paperStart:d=>head('Paper session started','good')+facts([
+   ['Symbol',d.symbol],['Candles loaded',d.n_candles],['Starting at bar',d.start_idx]])+
+   '<div class="warn">Now press "Step forward x25".</div>'+raw(d),
+ paperStep:d=>{const l=d.last||{};return head(`Stepped forward ${d.steps} bars`,'neutral')+facts([
+   ['Equity now',money(l.equity)],
+   ['Last decision',l.approved==null?'no decision':(l.approved?'TRADE':'stood aside')],
+   ['Conviction',l.conviction==null?'—':n2(l.conviction)],
+   ['Events',(l.events&&l.events.length)?l.events.join(', '):'none']])+
+   '<div class="warn">On random data the system usually stands aside — that is the honest default.</div>'+raw(d);},
+ paperStatus:d=>head(d.running?'Paper engine running':'Paper engine stopped',d.running?'good':'muted')+facts([
+   ['Equity',money(d.equity)],['Cash',money(d.cash)],
+   ['Open positions',Object.keys(d.open_positions||{}).length],
+   ['Closed trades',d.n_trades],['Decisions made',d.n_decisions]])+raw(d),
+ paperTrades:d=>{const t=d.trades||[];if(!t.length)return head('No closed trades yet','muted')+'<div class="warn">The system only trades when conviction passes the gate.</div>';
+   return head(`${t.length} closed trades`,'neutral')+'<table><tr><th>Symbol</th><th>Side</th><th>PnL</th><th>Return</th></tr>'+
+   t.map(x=>`<tr><td>${x.symbol}</td><td>${x.direction}</td><td class="${cls(x.pnl>0)}">${money(x.pnl)}</td><td>${pct(x.pnl_pct)}</td></tr>`).join('')+'</table>'+raw(d);},
+ analyze:d=>head('Analysis complete','neutral')+facts([
+   ['Overfitting risk',n2(d.overfitting_risk_score)+(d.overfitting_risk_score>=0.6?' (high)':' (ok)'),cls(d.overfitting_risk_score<0.6)],
+   ['Proposes disabling',(d.propose_disable||[]).join(', ')||'none'],
+   ['Parameter proposals',(d.parameter_proposals||[]).length],
+   ['Risk proposals',(d.risk_proposals||[]).length],
+   ['Can enable live?',d.can_enable_live?'YES':'NO (locked)','good']])+
+   '<div class="warn">All proposals need your manual approval. The agent never trades live.</div>'+raw(d),
+ discover:d=>renderPromotion(d),
+ promotion:d=>renderPromotion(d)
+};
+function renderPromotion(d){
+ if(d.note&&d.promoted==null) return head('No discovery run yet','muted')+'<div class="warn">'+d.note+'</div>';
+ const m=d.holdout_metrics||{};
+ return head(d.promoted?'PROMOTED ✅':'NOT promoted ❌',cls(d.promoted))+facts([
+   ['Candidates evaluated',d.candidates_evaluated],
+   ['Survivors',(d.survivors||[]).map(s=>s.name).join(', ')||'none'],
+   ['Ensemble weights',Object.entries(d.weights||{}).map(([k,v])=>`${k} ${(v*100).toFixed(0)}%`).join('  ')||'—'],
+   ['Return on UNSEEN data',pct(m.total_return),cls(m.total_return>0)],
+   ['Trades (unseen)',m.n_trades],
+   ['Max drawdown (unseen)',pct(m.max_drawdown),'bad'],
+   ['Robustness (unseen)',n2(m.mc_robustness)]])+
+   '<div class="warn">'+((d.reasons||[]).join('; '))+'. Promotion ≠ profit guarantee — keep paper trading.</div>'+raw(d);
+}
+
+async function act(kind,method,url,body){
+ const el=document.getElementById('out');
+ el.innerHTML='<span class="muted">Running… (Monte Carlo / discovery can take a few seconds)</span>';
  const opt={method,headers:{'Content-Type':'application/json'}};
  if(body)opt.body=JSON.stringify(body);
- try{const r=await fetch(url,opt);el.textContent=JSON.stringify(await r.json(),null,2);}
- catch(e){el.textContent='error: '+e;}
+ try{
+   const r=await fetch(url,opt);const d=await r.json();
+   el.innerHTML=(R[kind]?R[kind](d):JSON.stringify(d,null,2));
+ }catch(e){el.innerHTML='<span class="bad">Error: '+e+'</span>';}
 }
-call('GET','/health','health');
+async function refreshStatus(){
+ try{const d=await(await fetch('/health')).json();
+   document.getElementById('statusbar').innerHTML=
+   `⚠️ No profit promised · Mode: <b>${d.mode}</b> · Live trading: <b class="bad">${d.live_trading_enabled?'ON':'OFF'}</b> · Kill switch: <b>${d.kill_switch?'ACTIVE':'inactive'}</b>`;
+ }catch(e){}
+}
+refreshStatus();
 </script></body></html>
 """
 

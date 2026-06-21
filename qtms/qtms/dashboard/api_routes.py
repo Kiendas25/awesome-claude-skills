@@ -28,6 +28,7 @@ class SyntheticReq(BaseModel):
     symbol: str = "BTC/USDT"
     n: int = 800
     seed: int | None = None
+    drift: float = 0.0  # per-bar log-drift; >0 injects a genuine trend/edge
 
 
 class BacktestReq(BaseModel):
@@ -74,7 +75,7 @@ def config():
 @router.post("/data/synthetic")
 def data_synthetic(req: SyntheticReq):
     cfg = get_config()
-    df = MarketDataAdapter(cfg).synthetic(req.symbol, n=req.n, seed=req.seed)
+    df = MarketDataAdapter(cfg).synthetic(req.symbol, n=req.n, seed=req.seed, drift=req.drift)
     STATE.set_data(req.symbol, df)
     robustness = monte_carlo_data_robustness(df, n_paths=80, seed=cfg.seed)
     return {
@@ -181,6 +182,21 @@ def learning_analyze(req: AnalyzeReq):
         "can_enable_live": reco["can_enable_live"],
         "requires_manual_approval": reco["requires_manual_approval"],
     }
+
+
+@router.post("/agents/learning/discover")
+def learning_discover(req: AnalyzeReq):
+    """Search strategy variants, compose survivors, and re-validate the composite
+    on an UNSEEN holdout. Returns whether it was promoted. Promotion is a
+    research verdict only — it never enables live trading or changes config."""
+    cfg = get_config()
+    df = STATE.get_or_make(req.symbol)
+    return LearningSupervisor(cfg).discover(df)
+
+
+@router.get("/agents/learning/promotion")
+def learning_promotion():
+    return LearningSupervisor.latest_promotion() or {"note": "no discovery run yet"}
 
 
 @router.post("/live/request-approval")

@@ -23,12 +23,15 @@ class MarketDataAdapter:
     def __init__(self, cfg=None):
         self.cfg = cfg or get_config()
 
-    def synthetic(self, symbol: str, n: int = 1000, seed: int | None = None) -> pd.DataFrame:
+    def synthetic(
+        self, symbol: str, n: int = 1000, seed: int | None = None, drift: float = 0.0
+    ) -> pd.DataFrame:
         return generate_ohlcv(
             symbol=symbol,
             n=n,
             timeframe=self.cfg.timeframe,
             seed=self.cfg.seed if seed is None else seed,
+            drift=drift,
         )
 
     def from_csv(self, path: str, symbol: str) -> pd.DataFrame:

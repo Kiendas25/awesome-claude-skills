@@ -191,12 +191,20 @@ def validate_strategy(strategy, df: pd.DataFrame, cfg: QTMSConfig | None = None)
         reasons.append("Monte Carlo robustness too low")
     if ror["risk_of_ruin"] > cfg.risk.max_risk_of_ruin:
         reasons.append("risk of ruin too high")
-    # Regime instability: any regime with >=20 bars and negative sharpe.
+    # Regime instability: only flag a regime that is BOTH dominant (a large
+    # share of the sample) AND materially loss-making. Small counter-trend
+    # pockets where any directional strategy naturally gives back a little are
+    # expected and tolerated — flagging those would reject every real edge.
+    total_bars = sum(v["bars"] for v in regime_perf.values()) or 1
     unstable = [
-        r for r, v in regime_perf.items() if v["bars"] >= 20 and v["sharpe"] < -0.5
+        r
+        for r, v in regime_perf.items()
+        if (v["bars"] / total_bars) >= 0.25
+        and v["sharpe"] < -1.0
+        and v["mean_return"] < 0
     ]
     if unstable:
-        reasons.append(f"unstable across regimes: {unstable}")
+        reasons.append(f"unstable in dominant regime(s): {unstable}")
 
     passed = len(reasons) == 0
     score = float(

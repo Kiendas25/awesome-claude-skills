@@ -21,8 +21,14 @@ def generate_ohlcv(
     seed: int = 42,
     start_price: float = 30_000.0,
     start_time: datetime | None = None,
+    drift: float = 0.0,
 ) -> pd.DataFrame:
     """Generate ``n`` deterministic OHLCV candles for ``symbol``.
+
+    ``drift`` adds a constant per-bar log-return on top of the regime noise.
+    A nonzero drift injects a *genuine* trend (a real edge) so the discovery
+    loop can be exercised on data that actually contains signal; the default of
+    0.0 is pure regime noise where the honest verdict is "no edge".
 
     Returns a DataFrame indexed by UTC timestamp with columns:
     open, high, low, close, volume, spread.
@@ -39,7 +45,7 @@ def generate_ohlcv(
     regime_idx = np.repeat(np.arange(n_regimes), int(np.ceil(n / n_regimes)))[:n]
 
     log_returns = rng.normal(
-        loc=drifts[regime_idx], scale=vols[regime_idx], size=n
+        loc=drifts[regime_idx] + drift, scale=vols[regime_idx], size=n
     )
     close = start_price * np.exp(np.cumsum(log_returns))
     prev_close = np.concatenate([[start_price], close[:-1]])

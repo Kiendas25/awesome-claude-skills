@@ -57,8 +57,11 @@ DASHBOARD_HTML = """
   <button onclick="call('GET','/paper/trades','out')">Trades</button>
   <button onclick="call('POST','/paper/stop','out')">Stop</button></div>
  <div class="card"><h3>Learning Supervisor (off-path)</h3>
+  <button onclick="call('POST','/data/synthetic','out',{symbol:'BTC/USDT',n:1600,drift:0.0012})">Gen Trending Data</button>
   <button onclick="call('POST','/agents/learning/analyze','out',{symbol:'BTC/USDT'})">Analyze</button>
-  <button onclick="call('GET','/agents/learning/latest','out')">Latest Reco</button></div>
+  <button onclick="call('POST','/agents/learning/discover','out',{symbol:'BTC/USDT'})">Discover &amp; Promote</button>
+  <button onclick="call('GET','/agents/learning/promotion','out')">Latest Promotion</button>
+  <div class="warn">Promotion = survived unseen holdout once. Not a profit promise.</div></div>
  <div class="card" style="grid-column:1/3"><h3>Output</h3><pre id="out">Click a button…</pre></div>
 </main>
 <script>

@@ -25,6 +25,7 @@ from ..reports import report_writer
 from ..validation import validate_strategy
 from ..strategies import build_active
 from . import post_trade_analyzer, risk_reviewer, strategy_researcher
+from .strategy_optimizer import discover_and_promote
 
 
 class LearningSupervisor:
@@ -119,6 +120,53 @@ class LearningSupervisor:
         report_writer.write_validation_report(symbol, validation_results)
         save_json("agents/learning_latest.json", recommendations)
         return recommendations
+
+    def discover(self, df: pd.DataFrame) -> dict:
+        """Search strategy variants, compose the survivors, and re-validate the
+        composite on an UNSEEN holdout window. Persists the promoted config and
+        writes an Obsidian note. Promotion is a research verdict only — it never
+        enables live trading or changes runtime config automatically."""
+        symbol = str(df.attrs.get("symbol", "UNKNOWN"))
+        result = discover_and_promote(df, self.cfg)
+        payload = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "symbol": symbol,
+            "promoted": result.promoted,
+            "candidates_evaluated": result.candidates_evaluated,
+            "survivors": result.survivors,
+            "weights": result.weights,
+            "train_metrics": result.train_metrics,
+            "holdout_metrics": result.holdout_metrics,
+            "reasons": result.reasons,
+            "can_enable_live": self.CAN_ENABLE_LIVE,
+            "requires_manual_approval": True,
+            "note": (
+                "Composite was tuned on TRAIN and judged on an UNSEEN holdout. "
+                "A 'promoted' verdict means it survived unseen data once — it is "
+                "NOT a profit guarantee. Continue paper trading before trusting it."
+            ),
+        }
+        save_json("agents/promoted_strategy.json", payload)
+        body = [
+            f"## Strategy discovery & promotion — {symbol}\n",
+            f"- **Verdict:** {'PROMOTED ✅' if result.promoted else 'NOT promoted ❌'}",
+            f"- candidates evaluated: {result.candidates_evaluated}",
+            f"- survivors (passed TRAIN validation): {[s['name'] for s in result.survivors]}",
+            f"- ensemble weights: { {k: round(v,2) for k,v in result.weights.items()} }",
+            f"- holdout metrics: {result.holdout_metrics}",
+            f"- reasons: {result.reasons}\n",
+            "> Promotion = survived UNSEEN holdout once. Not a profit promise. "
+            "Keep paper trading. Live trading stays disabled.",
+        ]
+        report_writer.obs.write_note(
+            f"Strategy Promotion {symbol}", "\n".join(body),
+            tags=["promotion", "learning", "qtms"], subfolder="learning",
+        )
+        return payload
+
+    @staticmethod
+    def latest_promotion() -> dict | None:
+        return load_json("agents/promoted_strategy.json", default=None)
 
     def _update_scorecards(self, validation_results: dict) -> dict:
         card = load_json("agents/scorecards.json", default={})

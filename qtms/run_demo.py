@@ -59,6 +59,19 @@ def main() -> None:
     n_pass = sum(1 for v in reco["validation"].values() if v["passed"])
     print(f"    strategies passing validation: {n_pass}/{len(reco['validation'])}")
 
+    # 4b) discovery + promotion loop (the "find a real edge, honestly" path)
+    print("\n[4b] Strategy discovery & promotion (search -> compose -> unseen holdout)...")
+    # Two contrasting datasets: pure noise (no edge) vs a genuine trend (real edge).
+    noise = MarketDataAdapter(cfg).synthetic(symbol, n=1600, seed=7, drift=0.0)
+    trend = MarketDataAdapter(cfg).synthetic(symbol, n=1600, seed=42, drift=0.0012)
+    for label, data in (("pure-noise", noise), ("real-trend", trend)):
+        res = LearningSupervisor(cfg).discover(data)
+        hm = res["holdout_metrics"]
+        verdict = "PROMOTED" if res["promoted"] else "not promoted"
+        print(f"    [{label:10}] {verdict}: survivors={[s['name'] for s in res['survivors']]} "
+              f"holdout_return={hm.get('total_return', 0):.3f} trades={hm.get('n_trades')}")
+    print("    (noise must NOT promote; trend may promote only if it survives unseen data)")
+
     # 5) live gate status
     print("\n[5] Live trading gate status:")
     gate = evaluate_live_gate(LiveGateInputs(), cfg)

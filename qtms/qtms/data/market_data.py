@@ -48,11 +48,26 @@ class MarketDataAdapter:
         df.attrs["synthetic"] = False
         return df
 
-    def fetch_ccxt(self, *args, **kwargs):  # pragma: no cover - intentionally disabled
-        """Future exchange fetch. Disabled in MVP to keep the system local-first
-        and avoid any network dependency or accidental live data coupling."""
+    def live(
+        self, symbol: str, timeframe: str | None = None, limit: int = 1000,
+        source: str = "auto",
+    ) -> pd.DataFrame:
+        """Fetch REAL OHLCV price data (read-only, no API key, no trading).
+
+        Raises ``LiveDataError`` if every public source fails; callers should
+        catch it and fall back to ``synthetic()`` so loops stay resilient.
+        """
+        from .live_data import fetch_ohlcv
+
+        return fetch_ohlcv(
+            symbol, timeframe=timeframe or self.cfg.timeframe, limit=limit, source=source
+        )
+
+    def fetch_ccxt(self, *args, **kwargs):  # pragma: no cover - trading path disabled
+        """Live *trading* via ccxt is intentionally NOT implemented. For real
+        price *data* use ``live()`` (read-only public OHLCV)."""
         raise NotImplementedError(
-            "ccxt fetch is disabled in the MVP. Use synthetic() or from_csv()."
+            "Live trading via ccxt is disabled. Use live() for read-only data."
         )
 
 

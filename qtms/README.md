@@ -113,8 +113,11 @@ high drawdown.
 
 ## What is implemented
 
-- Synthetic OHLCV generation (regime-switching, seeded) + CSV import + strict
-  validation with a data-quality score; data-layer Monte Carlo robustness.
+- Synthetic OHLCV generation (regime-switching, seeded) + CSV import + **real
+  live OHLCV** from public exchanges (Binance → Coinbase → Kraken fallback, no
+  API key, read-only — `/data/live`); strict validation with a data-quality
+  score; data-layer Monte Carlo robustness. The autopilot can learn on live data
+  (`data_source="live"`) and falls back to synthetic on any network failure.
 - Full feature set (trend, mean-reversion, volatility, liquidity, microstructure,
   regime) with feature-stability Monte Carlo.
 - 6 deterministic strategies, each with confidence, invalidation level,

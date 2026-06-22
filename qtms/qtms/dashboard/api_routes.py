@@ -64,6 +64,17 @@ class AutopilotReq(BaseModel):
     drift: float = 0.0008
     n_candles: int = 1200
     paper_steps: int = 12
+    data_source: str = "synthetic"   # "synthetic" or "live" (real OHLCV)
+    timeframe: str = "5m"
+    source: str = "auto"             # exchange name or 'auto' for live data
+    limit: int = 1000
+
+
+class LiveDataReq(BaseModel):
+    symbol: str = "BTC/USDT"
+    timeframe: str = "5m"
+    limit: int = 1000
+    source: str = "auto"
 
 
 @router.get("/health")
@@ -92,6 +103,35 @@ def data_synthetic(req: SyntheticReq):
         "rows": len(df),
         "last_close": float(df["close"].iloc[-1]),
         "data_robustness": robustness.monte_carlo_summary,
+    }
+
+
+@router.post("/data/live")
+def data_live(req: LiveDataReq):
+    """Fetch REAL OHLCV from public exchanges (read-only, no key, no trading)."""
+    cfg = get_config()
+    try:
+        df = MarketDataAdapter(cfg).live(
+            req.symbol, timeframe=req.timeframe, limit=req.limit, source=req.source
+        )
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": f"{type(e).__name__}: {e}",
+            "hint": "Public exchange APIs may be blocked on your network/region. "
+                    "Try a different 'source' (binance/coinbase/kraken) or use synthetic data.",
+        }
+    STATE.set_data(req.symbol, df)
+    return {
+        "ok": True,
+        "symbol": req.symbol,
+        "source": df.attrs.get("source"),
+        "timeframe": req.timeframe,
+        "rows": len(df),
+        "last_close": float(df["close"].iloc[-1]),
+        "first_time": str(df.index[0]),
+        "last_time": str(df.index[-1]),
+        "data_quality": df.attrs.get("data_quality_score"),
     }
 
 
@@ -216,6 +256,8 @@ def autopilot_start(req: AutopilotReq):
     return get_autopilot().start(
         symbol=req.symbol, interval_seconds=req.interval_seconds,
         drift=req.drift, n_candles=req.n_candles, paper_steps=req.paper_steps,
+        data_source=req.data_source, timeframe=req.timeframe,
+        source=req.source, limit=req.limit,
     )
 
 

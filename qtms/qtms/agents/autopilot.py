@@ -60,6 +60,11 @@ class Autopilot:
         self.paper_steps = 12
         self.mc_paths = 20
         self.warmup = 150
+        # Data source: "synthetic" or "live" (real public OHLCV).
+        self.data_source = "synthetic"
+        self.timeframe = "5m"
+        self.source = "auto"        # exchange or 'auto' for live data
+        self.limit = 1000
 
     # --- one cycle (synchronous, testable) --------------------------------
     def run_one_cycle(self) -> dict:
@@ -80,7 +85,7 @@ class Autopilot:
         seed = self.seed_base + cycle
         symbol = self.state.symbol
 
-        df = MarketDataAdapter(cfg).synthetic(symbol, n=self.n_candles, seed=seed, drift=self.drift)
+        df, data_used, data_note = self._get_data(symbol, seed)
 
         # 1) discover & promote (judged on unseen holdout)
         promo = discover_and_promote(df, cfg)
@@ -100,6 +105,8 @@ class Autopilot:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "symbol": symbol,
             "seed": seed,
+            "data_source": data_used,
+            "data_note": data_note,
             "promoted": promo.promoted,
             "survivors": [s["name"] for s in promo.survivors],
             "weights": promo.weights,
@@ -128,9 +135,34 @@ class Autopilot:
         save_json("agents/autopilot_latest.json", self._public_state())
         return summary
 
+    def _get_data(self, symbol: str, seed: int):
+        """Return (df, source_used, note). For live, fetch real OHLCV and fall
+        back to synthetic on any network/error so the loop never dies."""
+        cfg = self.cfg
+        if self.data_source == "live":
+            try:
+                df = MarketDataAdapter(cfg).live(
+                    symbol, timeframe=self.timeframe, limit=self.limit, source=self.source
+                )
+                return df, f"live:{df.attrs.get('source', self.source)}", "real market data"
+            except Exception as e:
+                note = f"live fetch failed ({type(e).__name__}: {str(e)[:80]}); used synthetic"
+                with self._lock:
+                    self.state.last_error = note
+                df = MarketDataAdapter(cfg).synthetic(
+                    symbol, n=self.n_candles, seed=seed, drift=self.drift
+                )
+                return df, "synthetic(fallback)", note
+        df = MarketDataAdapter(cfg).synthetic(
+            symbol, n=self.n_candles, seed=seed, drift=self.drift
+        )
+        return df, "synthetic", "synthetic data"
+
     # --- background loop ---------------------------------------------------
     def start(self, symbol: str = "BTC/USDT", interval_seconds: float = 20.0,
-              drift: float = 0.0008, n_candles: int = 1200, paper_steps: int = 12) -> dict:
+              drift: float = 0.0008, n_candles: int = 1200, paper_steps: int = 12,
+              data_source: str = "synthetic", timeframe: str = "5m",
+              source: str = "auto", limit: int = 1000) -> dict:
         if self.state.running:
             return {"running": True, "note": "autopilot already running"}
         self.state = AutopilotState(
@@ -140,6 +172,10 @@ class Autopilot:
         self.drift = drift
         self.n_candles = n_candles
         self.paper_steps = paper_steps
+        self.data_source = data_source
+        self.timeframe = timeframe
+        self.source = source
+        self.limit = limit
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
@@ -207,6 +243,8 @@ class Autopilot:
                 "running": s.running,
                 "cycle": s.cycle,
                 "symbol": s.symbol,
+                "data_source": self.data_source,
+                "timeframe": self.timeframe,
                 "interval_seconds": s.interval_seconds,
                 "started_at": s.started_at,
                 "last_summary": s.last_summary,

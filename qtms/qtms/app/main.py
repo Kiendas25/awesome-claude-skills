@@ -57,9 +57,10 @@ DASHBOARD_HTML = """
 </header>
 <main>
  <div class="card"><h3>1 · Data</h3>
-  <div class="sub">Generate price data to work with. "Trending" data contains a real edge.</div>
+  <div class="sub">Synthetic data to experiment, or real market data from a public exchange (read-only).</div>
   <button onclick="act('data','POST','/data/synthetic',{symbol:'BTC/USDT',n:800})">Generate random data</button>
-  <button onclick="act('data','POST','/data/synthetic',{symbol:'BTC/USDT',n:1600,drift:0.0012})">Generate trending data</button></div>
+  <button onclick="act('data','POST','/data/synthetic',{symbol:'BTC/USDT',n:1600,drift:0.0012})">Generate trending data</button>
+  <button onclick="act('liveData','POST','/data/live',{symbol:'BTC/USDT',timeframe:'5m',limit:1000})">Fetch live data (real market)</button></div>
  <div class="card"><h3>2 · Test a strategy</h3>
   <div class="sub">Validate one strategy and stress-test it with Monte Carlo.</div>
   <button onclick="act('backtest','POST','/backtest/run',{symbol:'BTC/USDT',strategy:'trend_following'})">Validate trend strategy</button>
@@ -79,7 +80,8 @@ DASHBOARD_HTML = """
   <div class="warn">Promotion = survived an unseen test once. NOT a profit promise.</div></div>
  <div class="card" style="grid-column:1/3"><h3>5 · Autopilot <span class="muted" style="font-size:12px">(autonomous research — paper only)</span></h3>
   <div class="sub">Runs the loop by itself: refresh data → discover → paper-trade → analyze, on repeat. Promotions are surfaced for your approval. Never goes live; kill switch stops it.</div>
-  <button onclick="startAuto()">▶ Start autopilot</button>
+  <button onclick="startAuto('synthetic')">▶ Start (synthetic)</button>
+  <button onclick="startAuto('live')">▶ Start on LIVE data</button>
   <button onclick="stopAuto()">⏹ Stop</button>
   <button onclick="act('autopilot','POST','/autopilot/approve')">✔ Approve latest promotion</button>
   <div class="result" id="autopilot" style="margin-top:10px"><span class="muted">Autopilot is idle.</span></div></div>
@@ -140,6 +142,11 @@ const R={
    ['Risk proposals',(d.risk_proposals||[]).length],
    ['Can enable live?',d.can_enable_live?'YES':'NO (locked)','good']])+
    '<div class="warn">All proposals need your manual approval. The agent never trades live.</div>'+raw(d),
+ liveData:d=>{ if(!d.ok) return head('Live data unavailable','bad')+'<div class="warn bad">'+d.error+'</div><div class="warn">'+(d.hint||'')+'</div>';
+   return head('Live data · '+d.symbol+' · '+d.source,'good')+facts([
+     ['Rows',d.rows],['Last price',money(d.last_close)],['Timeframe',d.timeframe],
+     ['From',d.first_time],['To',d.last_time],['Data quality',pct(d.data_quality)]])+
+     '<div class="warn">Real market data loaded ✅. Now run step 2/4, or start the autopilot on LIVE.</div>'+raw(d);},
  discover:d=>renderPromotion(d),
  promotion:d=>renderPromotion(d),
  autopilot:d=>{ pollAuto(); const ok=d.approved?'good':'muted'; return head('Approval',ok)+'<div class="warn '+ok+'">'+(d.note||'')+'</div>'; }
@@ -151,6 +158,7 @@ function renderAuto(d){
  html+=facts([
    ['Status',d.running?'RUNNING':'stopped',d.running?'good':'muted'],
    ['Symbol',d.symbol],
+   ['Data source',(d.data_source||'synthetic')+(d.data_source=='live'?' '+(d.timeframe||''):''),d.data_source=='live'?'good':'muted'],
    ['Last cycle verdict',last.promoted==null?'—':(last.promoted?'PROMOTED ✅':'no edge found'),last.promoted?'good':'muted'],
    ['Last paper equity',last.paper_equity==null?'—':money(last.paper_equity)],
    ['Promotions awaiting approval',pend,pend?'good':'muted'],
@@ -169,10 +177,13 @@ async function pollAuto(){
    if(!d.running&&_autoTimer){clearInterval(_autoTimer);_autoTimer=null;}
  }catch(e){}
 }
-async function startAuto(){
- const el=document.getElementById('autopilot');el.innerHTML='<span class="muted">Starting autopilot…</span>';
- await fetch('/autopilot/start',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({symbol:'BTC/USDT',interval_seconds:20,drift:0.0008})});
+async function startAuto(src){
+ src=src||'synthetic';
+ const el=document.getElementById('autopilot');el.innerHTML='<span class="muted">Starting autopilot ('+src+')…</span>';
+ const body=(src==='live')
+   ?{symbol:'BTC/USDT',interval_seconds:30,data_source:'live',timeframe:'5m',source:'auto',drift:0}
+   :{symbol:'BTC/USDT',interval_seconds:20,drift:0.0008};
+ await fetch('/autopilot/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  if(!_autoTimer)_autoTimer=setInterval(pollAuto,4000);
  pollAuto();
 }

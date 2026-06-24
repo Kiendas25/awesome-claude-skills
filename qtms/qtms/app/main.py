@@ -101,6 +101,7 @@ DASHBOARD_HTML = """
   <button onclick="act('analyze','POST','/agents/learning/analyze',{symbol:S()})">Analyze results</button>
   <button onclick="act('discover','POST','/agents/learning/discover',{symbol:S()})">Discover &amp; promote</button>
   <button onclick="act('meta','POST','/agents/learning/meta-model',{symbol:S()})">ML meta-model</button>
+  <button onclick="act('campaign','POST','/agents/campaign/run',{days:3,n_candles:800})">3-day campaign (keep/fix/erase)</button>
   <button onclick="act('promotion','GET','/agents/learning/promotion')">Latest promotion</button>
   <div class="warn">Promotion = survived an unseen test once. NOT a profit promise.</div></div>
  <div class="card" style="grid-column:1/3"><h3>5 · Autopilot <span class="muted" style="font-size:12px">(autonomous research — paper only)</span></h3>
@@ -196,6 +197,14 @@ const R={
      ['Samples',d.n_samples],
      ['Top features',tf||'—']])+
      '<div class="warn">0.50 AUC = random. Above ~0.52 across folds hints at real structure. Off-path research; never trades.</div>'+raw(d);},
+ campaign:d=>{ if(!d.strategy_scorecards) return head('No campaign yet','muted')+'<div class="warn">'+(d.note||'')+'</div>';
+   let h=head(d.days+'-day paper campaign · '+d.total_promotions+'/'+d.total_runs+' promotions','neutral');
+   h+='<table><tr><th>Strategy</th><th>Verdict</th><th>Pass%</th><th>Promo%</th><th>Rob</th></tr>'+
+     d.strategy_scorecards.map(s=>`<tr><td>${s.strategy}</td><td class="${s.verdict=='KEEP'?'good':(s.verdict=='ERASE'?'bad':'')}">${s.verdict}</td><td>${pct(s.validation_pass_rate)}</td><td>${pct(s.promotion_contribution_rate)}</td><td>${n2(s.avg_robustness)}</td></tr>`).join('')+'</table>';
+   h+='<div class="warn good">KEEP: '+(d.recommendations.keep.join(', ')||'—')+'</div>';
+   h+='<div class="warn bad">ERASE: '+(d.recommendations.erase.join(', ')||'—')+'</div>';
+   h+='<div class="warn">Verdicts reflect the test DATA. On synthetic data they lean toward trend strategies — re-run on LIVE data before actually erasing anything.</div>';
+   return h+raw(d);},
  discover:d=>renderPromotion(d),
  promotion:d=>renderPromotion(d),
  autopilot:d=>{ pollAuto(); const ok=d.approved?'good':'muted'; return head('Approval',ok)+'<div class="warn '+ok+'">'+(d.note||'')+'</div>'; }

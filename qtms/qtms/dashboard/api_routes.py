@@ -69,6 +69,9 @@ class AutopilotReq(BaseModel):
     timeframe: str = "5m"
     source: str = "auto"             # exchange name or 'auto' for live data
     limit: int = 1000
+    scan_all: bool = True            # scan the whole universe each round
+    parallel: bool = True
+    max_workers: int = 4
 
 
 class LiveDataReq(BaseModel):
@@ -76,6 +79,12 @@ class LiveDataReq(BaseModel):
     timeframe: str = "5m"
     limit: int = 1000
     source: str = "auto"
+
+
+class CampaignReq(BaseModel):
+    days: int = 3
+    data_source: str = "synthetic"   # "synthetic" or "live"
+    n_candles: int = 1100
 
 
 @router.get("/health")
@@ -254,6 +263,18 @@ def learning_promotion():
     return LearningSupervisor.latest_promotion() or {"note": "no discovery run yet"}
 
 
+@router.post("/agents/campaign/run")
+def campaign_run(req: CampaignReq):
+    """Run a multi-day paper-test campaign and return keep/fix/erase verdicts."""
+    from ..agents.campaign import run_campaign
+    return run_campaign(days=req.days, data_source=req.data_source, n_candles=req.n_candles)
+
+
+@router.get("/agents/campaign/latest")
+def campaign_latest():
+    return load_json("agents/campaign_latest.json", default={"note": "no campaign run yet"})
+
+
 @router.post("/agents/learning/meta-model")
 def learning_meta_model(req: AnalyzeReq):
     """Train an ML meta-model and report out-of-sample predictive power."""
@@ -272,6 +293,7 @@ def autopilot_start(req: AutopilotReq):
         drift=req.drift, n_candles=req.n_candles, paper_steps=req.paper_steps,
         data_source=req.data_source, timeframe=req.timeframe,
         source=req.source, limit=req.limit,
+        scan_all=req.scan_all, parallel=req.parallel, max_workers=req.max_workers,
     )
 
 

@@ -59,6 +59,7 @@ class PromotionResult:
     train_metrics: dict = field(default_factory=dict)
     reasons: list[str] = field(default_factory=list)
     candidates_evaluated: int = 0
+    strategy_detail: list = field(default_factory=list)  # per-strategy train results
 
 
 def _make(name: str, combo: dict, cfg: QTMSConfig):
@@ -146,6 +147,7 @@ def discover_and_promote(
     total_candidates = 0
     n_strategies = 0  # how many strategies were searched (for multiple-testing)
     train_robustness: dict[str, float] = {}
+    strategy_detail: list[dict] = []
     for name in cfg.active_strategies:
         if name not in REGISTRY:
             continue
@@ -154,6 +156,12 @@ def discover_and_promote(
         total_candidates += best["candidates"]
         strat = _make(name, best["combo"], cfg)
         vres = validate_strategy(strat, train, cfg)
+        strategy_detail.append({
+            "name": name, "passed": vres.passed,
+            "robustness": vres.monte_carlo.get("robustness_score", 0.0),
+            "train_score": best["score"],
+            "fail_reasons": vres.fail_reasons[:2],
+        })
         if vres.passed:
             survivors.append({"name": name, "combo": best["combo"],
                               "train_score": best["score"], "train_validation_score": vres.score})
@@ -164,6 +172,7 @@ def discover_and_promote(
             False, candidates_evaluated=total_candidates,
             reasons=["no strategy survived validation on the training window — "
                      "treat all as noise (honest result)"],
+            strategy_detail=strategy_detail,
         )
 
     # 3) weights from TRAIN robustness only (no holdout leakage).
@@ -237,4 +246,5 @@ def discover_and_promote(
         train_metrics=train_bt.metrics,
         reasons=reasons or ["passed all unseen-holdout gates (multiple-testing aware)"],
         candidates_evaluated=total_candidates,
+        strategy_detail=strategy_detail,
     )

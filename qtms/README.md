@@ -140,10 +140,15 @@ high drawdown.
 - Validation & anti-overfitting: train/test split, walk-forward, bootstrap CIs,
   parameter sensitivity heatmap, regime performance, deflated-Sharpe and PBO
   placeholders, hard pass/fail gates.
-- Research **autopilot**: an autonomous, paper-only background loop (refresh data
-  → discover & promote on unseen data → paper-trade → analyze → report) that
-  surfaces promotions for manual approval. It cannot enable live trading and the
-  kill switch stops it (`/autopilot/start|stop|status|approve`).
+- Research **autopilot**: an autonomous, paper-only background loop that **scans
+  the whole coin universe each round, in parallel processes** (~3× faster on 4
+  cores; falls back to sequential if process pools are unavailable), surfacing
+  promotions for manual approval. Cannot enable live trading; kill switch stops
+  it (`/autopilot/start|stop|status|approve`).
+- **Multi-day paper-test campaign** (`/agents/campaign/run`) that judges every
+  strategy on the evidence and assigns a **KEEP / IMPROVE / ERASE** verdict,
+  with a per-coin promotion breakdown — a data-driven "what to keep, fix, or
+  delete" report written to the Obsidian brain.
 - **Discovery promotes only what survives multiple independent out-of-sample
   checks** (bootstrap confidence + a minimum return that deflates as the search
   grows + consistency across both holdout halves). Measured behaviour: ~0/12

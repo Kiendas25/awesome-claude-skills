@@ -98,6 +98,33 @@ def test_leaderboard_tracks_per_coin(cfg):
         assert "promotions" in row and "best_return" in row
 
 
+def test_run_one_round_scans_whole_universe(cfg):
+    cfg.monte_carlo.n_paths = 10
+    ap = Autopilot(cfg)
+    ap.symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+    ap.n_candles = 300
+    ap.paper_steps = 1
+    ap.parallel = False  # deterministic, no process pool in tests
+    r = ap.run_one_round()
+    assert r["scanned"] == 3
+    assert "n_promoted" in r and "per_symbol" in r
+    lb = {row["symbol"] for row in ap.status()["leaderboard"]}
+    assert lb == {"BTC/USDT", "ETH/USDT", "SOL/USDT"}
+
+
+def test_compute_symbol_is_pure(cfg):
+    # The worker returns a plain dict and touches no autopilot state.
+    from qtms.agents.autopilot import Autopilot, compute_symbol
+    cfg.monte_carlo.n_paths = 10
+    ap = Autopilot(cfg)
+    ap.n_candles = 300
+    ap.paper_steps = 1
+    out = compute_symbol(ap._payload("ETH/USDT", seed=5, cycle=1))
+    assert out["symbol"] == "ETH/USDT"
+    assert isinstance(out["promoted"], bool)
+    assert "holdout_metrics" in out
+
+
 def test_leaderboard_persists_across_instances(cfg):
     from qtms.data.storage import save_json
     save_json("agents/autopilot_state.json", {})  # clean slate

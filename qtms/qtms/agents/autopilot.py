@@ -20,7 +20,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from ..app.config import QTMSConfig, get_config
+from ..app.config import QTMSConfig, get_config, set_config
 from ..app.safety import KILL_SWITCH
 from ..app.paper_engine import PaperTradingEngine
 from ..data.market_data import MarketDataAdapter
@@ -28,6 +28,67 @@ from ..data.storage import load_json, save_json
 from ..reports import obsidian_exporter as obs
 from . import post_trade_analyzer
 from .strategy_optimizer import discover_and_promote
+
+
+def _acquire_data(cfg: QTMSConfig, symbol: str, seed: int, data_source: str,
+                  n_candles: int, drift: float, timeframe: str, source: str, limit: int):
+    """Return (df, source_used, note). Live falls back to synthetic on error."""
+    if data_source == "live":
+        try:
+            df = MarketDataAdapter(cfg).live(symbol, timeframe=timeframe, limit=limit, source=source)
+            return df, f"live:{df.attrs.get('source', source)}", "real market data"
+        except Exception as e:
+            df = MarketDataAdapter(cfg).synthetic(symbol, n=n_candles, seed=seed, drift=drift)
+            return df, "synthetic(fallback)", (
+                f"live fetch failed ({type(e).__name__}: {str(e)[:80]}); used synthetic")
+    df = MarketDataAdapter(cfg).synthetic(symbol, n=n_candles, seed=seed, drift=drift)
+    return df, "synthetic", "synthetic data"
+
+
+def compute_symbol(payload: dict) -> dict:
+    """Pure, picklable unit of work for one symbol (runs in a worker process).
+
+    Does data -> discover -> paper -> analyze and returns a plain summary dict.
+    No shared state, no disk writes — the parent process merges the results.
+    """
+    cfg = payload["cfg"]
+    if not isinstance(cfg, QTMSConfig):
+        cfg = QTMSConfig(**cfg)
+    set_config(cfg)
+    cfg.monte_carlo.n_paths = payload["mc_paths"]
+    symbol, seed, cycle = payload["symbol"], payload["seed"], payload["cycle"]
+
+    df, data_used, data_note = _acquire_data(
+        cfg, symbol, seed, payload["data_source"], payload["n_candles"],
+        payload["drift"], payload["timeframe"], payload["source"], payload["limit"])
+
+    promo = discover_and_promote(df, cfg)
+
+    eng = PaperTradingEngine(cfg, mc_paths=payload["mc_paths"])
+    eng.start(df, warmup=min(payload["warmup"], len(df) // 3))
+    eng.run(max_steps=payload["paper_steps"])
+    eng.stop()
+    paper = eng.status()
+    analysis = post_trade_analyzer.analyze_trades(eng.broker.closed_trades)
+
+    from datetime import datetime, timezone
+    return {
+        "cycle": cycle,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "symbol": symbol,
+        "seed": seed,
+        "data_source": data_used,
+        "data_note": data_note,
+        "promoted": promo.promoted,
+        "survivors": [s["name"] for s in promo.survivors],
+        "weights": promo.weights,
+        "holdout_metrics": promo.holdout_metrics,
+        "promotion_reasons": promo.reasons,
+        "paper_equity": paper.get("equity"),
+        "paper_trades": paper.get("n_trades"),
+        "trade_analysis": analysis.get("summary", {}),
+        "can_enable_live": False,
+    }
 
 
 @dataclass
@@ -68,111 +129,134 @@ class Autopilot:
         self.timeframe = "5m"
         self.source = "auto"        # exchange or 'auto' for live data
         self.limit = 1000
+        # Performance: scan the whole universe each round, in parallel threads.
+        self.scan_all = True
+        self.parallel = True
+        self.max_workers = 4
 
-    # --- one cycle (synchronous, testable) --------------------------------
-    def run_one_cycle(self) -> dict:
-        if KILL_SWITCH.active:
-            summary = {
-                "cycle": self.state.cycle,
-                "skipped": True,
-                "reason": f"kill switch active: {KILL_SWITCH.reason}",
-            }
-            self._record(summary)
-            return summary
-
-        cfg = self.cfg
-        cfg.monte_carlo.n_paths = self.mc_paths
-        with self._lock:
-            self.state.cycle += 1
-            cycle = self.state.cycle
-        seed = self.seed_base + cycle
-        # Rotate through the symbol universe — one coin per cycle.
-        universe = self.symbols or [self.state.symbol or "BTC/USDT"]
-        symbol = universe[(cycle - 1) % len(universe)]
-
-        df, data_used, data_note = self._get_data(symbol, seed)
-
-        # 1) discover & promote (judged on unseen holdout)
-        promo = discover_and_promote(df, cfg)
-
-        # 2) paper-trade a short pass (virtual money only)
-        eng = PaperTradingEngine(cfg, mc_paths=self.mc_paths)
-        eng.start(df, warmup=min(self.warmup, len(df) // 3))
-        eng.run(max_steps=self.paper_steps)
-        eng.stop()
-        paper = eng.status()
-
-        # 3) quick analysis of any closed paper trades
-        analysis = post_trade_analyzer.analyze_trades(eng.broker.closed_trades)
-
-        summary = {
-            "cycle": cycle,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "symbol": symbol,
-            "seed": seed,
-            "data_source": data_used,
-            "data_note": data_note,
-            "promoted": promo.promoted,
-            "survivors": [s["name"] for s in promo.survivors],
-            "weights": promo.weights,
-            "holdout_metrics": promo.holdout_metrics,
-            "promotion_reasons": promo.reasons,
-            "paper_equity": paper.get("equity"),
-            "paper_trades": paper.get("n_trades"),
-            "trade_analysis": analysis.get("summary", {}),
-            "can_enable_live": self.CAN_ENABLE_LIVE,
+    def _payload(self, symbol: str, seed: int, cycle: int) -> dict:
+        return {
+            "cfg": self.cfg, "symbol": symbol, "seed": seed, "cycle": cycle,
+            "mc_paths": self.mc_paths, "n_candles": self.n_candles, "drift": self.drift,
+            "paper_steps": self.paper_steps, "warmup": self.warmup,
+            "data_source": self.data_source, "timeframe": self.timeframe,
+            "source": self.source, "limit": self.limit,
         }
 
-        # 4) update the per-coin leaderboard
-        self._update_scoreboard(symbol, promo)
-
-        # 5) surface a promotion for MANUAL approval (never auto-applied)
-        if promo.promoted:
+    def _merge(self, summary: dict) -> dict:
+        """Apply a worker's result to shared state (scoreboard, pending, notes)."""
+        symbol = summary["symbol"]
+        if "failed" in (summary.get("data_note") or ""):
+            with self._lock:
+                self.state.last_error = summary["data_note"]
+        self._update_scoreboard(symbol, summary["promoted"],
+                                summary["holdout_metrics"], summary["survivors"])
+        if summary["promoted"]:
             with self._lock:
                 self.state.pending_approvals.append({
-                    "cycle": cycle,
-                    "symbol": symbol,
-                    "timestamp": summary["timestamp"],
-                    "survivors": summary["survivors"],
-                    "weights": promo.weights,
-                    "holdout_metrics": promo.holdout_metrics,
+                    "cycle": summary["cycle"], "symbol": symbol,
+                    "timestamp": summary["timestamp"], "survivors": summary["survivors"],
+                    "weights": summary["weights"], "holdout_metrics": summary["holdout_metrics"],
                     "approved": False,
                 })
             self._write_note(symbol, summary, promoted=True)
+        return summary
 
+    # --- per-symbol work (sequential unit) --------------------------------
+    def _process_symbol(self, symbol: str, seed: int, cycle: int) -> dict:
+        return self._merge(compute_symbol(self._payload(symbol, seed, cycle)))
+
+    def _skip_if_killed(self) -> dict | None:
+        if KILL_SWITCH.active:
+            s = {"cycle": self.state.cycle, "skipped": True,
+                 "reason": f"kill switch active: {KILL_SWITCH.reason}"}
+            self._record(s)
+            return s
+        return None
+
+    # --- one cycle: process ONE rotating symbol (synchronous, testable) ---
+    def run_one_cycle(self) -> dict:
+        skipped = self._skip_if_killed()
+        if skipped:
+            return skipped
+        self.cfg.monte_carlo.n_paths = self.mc_paths
+        with self._lock:
+            self.state.cycle += 1
+            cycle = self.state.cycle
+        universe = self.symbols or [self.state.symbol or "BTC/USDT"]
+        symbol = universe[(cycle - 1) % len(universe)]
+        summary = self._process_symbol(symbol, self.seed_base + cycle, cycle)
         self._record(summary)
         save_json("agents/autopilot_latest.json", self._public_state())
         return summary
 
-    def _get_data(self, symbol: str, seed: int):
-        """Return (df, source_used, note). For live, fetch real OHLCV and fall
-        back to synthetic on any network/error so the loop never dies."""
-        cfg = self.cfg
-        if self.data_source == "live":
+    # --- one round: scan the WHOLE universe (optionally in parallel) -------
+    def run_one_round(self) -> dict:
+        skipped = self._skip_if_killed()
+        if skipped:
+            return skipped
+        self.cfg.monte_carlo.n_paths = self.mc_paths
+        with self._lock:
+            self.state.cycle += 1
+            rnd = self.state.cycle
+        universe = self.symbols or [self.state.symbol or "BTC/USDT"]
+        payloads = [self._payload(s, self.seed_base + rnd * 100 + i, rnd)
+                    for i, s in enumerate(universe)]
+
+        results = None
+        if self.parallel and len(payloads) > 1:
+            # Real multi-core parallelism needs PROCESSES (numpy/pandas hold the
+            # GIL). Compute in workers, then merge results in this process. Any
+            # failure (pickling, spawn restrictions) falls back to sequential.
             try:
-                df = MarketDataAdapter(cfg).live(
-                    symbol, timeframe=self.timeframe, limit=self.limit, source=self.source
-                )
-                return df, f"live:{df.attrs.get('source', self.source)}", "real market data"
+                from concurrent.futures import ProcessPoolExecutor
+                computed = []
+                with ProcessPoolExecutor(max_workers=self.max_workers) as ex:
+                    computed = list(ex.map(compute_symbol, payloads))
+                results = [self._merge(s) for s in computed]
             except Exception as e:
-                note = f"live fetch failed ({type(e).__name__}: {str(e)[:80]}); used synthetic"
                 with self._lock:
-                    self.state.last_error = note
-                df = MarketDataAdapter(cfg).synthetic(
-                    symbol, n=self.n_candles, seed=seed, drift=self.drift
-                )
-                return df, "synthetic(fallback)", note
-        df = MarketDataAdapter(cfg).synthetic(
-            symbol, n=self.n_candles, seed=seed, drift=self.drift
-        )
-        return df, "synthetic", "synthetic data"
+                    self.state.last_error = f"parallel fell back to sequential: {type(e).__name__}"
+                results = None
+        if results is None:
+            results = [self._merge(compute_symbol(p)) for p in payloads]
+
+        n_promoted = sum(1 for r in results if r["promoted"])
+        promoted_syms = [r["symbol"] for r in results if r["promoted"]]
+        equities = [r["paper_equity"] for r in results if r.get("paper_equity") is not None]
+        round_summary = {
+            "round": rnd,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "symbol": f"round {rnd}: scanned {len(universe)} coins",
+            "scanned": len(universe),
+            "n_promoted": n_promoted,
+            "promoted_symbols": promoted_syms,
+            "promoted": n_promoted > 0,
+            "paper_equity": (sum(equities) / len(equities)) if equities else None,
+            "per_symbol": [{"symbol": r["symbol"], "promoted": r["promoted"]} for r in results],
+            "can_enable_live": self.CAN_ENABLE_LIVE,
+        }
+        self._record(round_summary)
+        save_json("agents/autopilot_latest.json", self._public_state())
+        return round_summary
+
+    def _get_data(self, symbol: str, seed: int):
+        """Return (df, source_used, note); records last_error on live fallback."""
+        df, used, note = _acquire_data(
+            self.cfg, symbol, seed, self.data_source, self.n_candles, self.drift,
+            self.timeframe, self.source, self.limit)
+        if "failed" in note:
+            with self._lock:
+                self.state.last_error = note
+        return df, used, note
 
     # --- background loop ---------------------------------------------------
     def start(self, symbol: str | None = None, symbols: list[str] | None = None,
               interval_seconds: float = 20.0,
               drift: float = 0.0008, n_candles: int = 1200, paper_steps: int = 12,
               data_source: str = "synthetic", timeframe: str = "5m",
-              source: str = "auto", limit: int = 1000) -> dict:
+              source: str = "auto", limit: int = 1000,
+              scan_all: bool = True, parallel: bool = True, max_workers: int = 4) -> dict:
         if self.state.running:
             return {"running": True, "note": "autopilot already running"}
         # Resolve the symbol universe: explicit list > single symbol > config.
@@ -190,6 +274,9 @@ class Autopilot:
         self.timeframe = timeframe
         self.source = source
         self.limit = limit
+        self.scan_all = scan_all
+        self.parallel = parallel
+        self.max_workers = max_workers
         # Carry the per-coin leaderboard over from previous runs.
         self._load_persisted()
         self._stop.clear()
@@ -200,7 +287,7 @@ class Autopilot:
     def _loop(self) -> None:
         while not self._stop.is_set():
             try:
-                self.run_one_cycle()
+                self.run_one_round() if self.scan_all else self.run_one_cycle()
             except Exception as e:  # keep the loop alive; record the error
                 with self._lock:
                     self.state.last_error = f"{type(e).__name__}: {e}"
@@ -234,18 +321,19 @@ class Autopilot:
         return {"approved": latest, "note": "approved for PAPER use only; live still disabled"}
 
     # --- helpers -----------------------------------------------------------
-    def _update_scoreboard(self, symbol: str, promo) -> None:
+    def _update_scoreboard(self, symbol: str, promoted: bool,
+                           holdout_metrics: dict, survivor_names: list) -> None:
         with self._lock:
             sb = self.state.scoreboard.setdefault(
                 symbol, {"cycles": 0, "promotions": 0, "best_return": 0.0, "strategies": {}}
             )
             sb["cycles"] += 1
-            if promo.promoted:
+            if promoted:
                 sb["promotions"] += 1
-                r = float((promo.holdout_metrics or {}).get("total_return", 0.0) or 0.0)
+                r = float((holdout_metrics or {}).get("total_return", 0.0) or 0.0)
                 sb["best_return"] = max(sb["best_return"], r)
-                for s in promo.survivors:
-                    sb["strategies"][s["name"]] = sb["strategies"].get(s["name"], 0) + 1
+                for name in survivor_names:
+                    sb["strategies"][name] = sb["strategies"].get(name, 0) + 1
         self._persist()
 
     # --- persistence: leaderboard survives restarts ------------------------

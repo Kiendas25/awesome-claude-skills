@@ -100,6 +100,7 @@ DASHBOARD_HTML = """
   <div class="sub">The agent searches strategies and only "promotes" what survives unseen data.</div>
   <button onclick="act('analyze','POST','/agents/learning/analyze',{symbol:S()})">Analyze results</button>
   <button onclick="act('discover','POST','/agents/learning/discover',{symbol:S()})">Discover &amp; promote</button>
+  <button onclick="act('meta','POST','/agents/learning/meta-model',{symbol:S()})">ML meta-model</button>
   <button onclick="act('promotion','GET','/agents/learning/promotion')">Latest promotion</button>
   <div class="warn">Promotion = survived an unseen test once. NOT a profit promise.</div></div>
  <div class="card" style="grid-column:1/3"><h3>5 · Autopilot <span class="muted" style="font-size:12px">(autonomous research — paper only)</span></h3>
@@ -185,6 +186,16 @@ const R={
      ['Rows',d.rows],['Last price',money(d.last_close)],['Timeframe',d.timeframe],
      ['From',d.first_time],['To',d.last_time],['Data quality',pct(d.data_quality)]])+
      '<div class="warn">Real market data loaded ✅. Now run step 2/4, or start the autopilot on LIVE.</div>'+raw(d);},
+ meta:d=>{ if(d.available===false) return head('ML meta-model unavailable','muted')+'<div class="warn">'+(d.note||'')+'</div>';
+   if(d.has_edge==null) return head('ML meta-model','muted')+'<div class="warn">'+(d.note||'')+'</div>'+raw(d);
+   const tf=(d.top_features||[]).map(f=>f.feature).join(', ');
+   return head(d.has_edge?'Predictive structure found ✅':'No reliable edge (≈coin flip)',d.has_edge?'good':'muted')+facts([
+     ['Out-of-sample AUC',n2(d.oos_auc_mean)+' (min '+n2(d.oos_auc_min)+')',cls(d.has_edge)],
+     ['OOS accuracy',pct(d.oos_accuracy_mean)],
+     ['Folds (walk-forward)',d.folds_used],
+     ['Samples',d.n_samples],
+     ['Top features',tf||'—']])+
+     '<div class="warn">0.50 AUC = random. Above ~0.52 across folds hints at real structure. Off-path research; never trades.</div>'+raw(d);},
  discover:d=>renderPromotion(d),
  promotion:d=>renderPromotion(d),
  autopilot:d=>{ pollAuto(); const ok=d.approved?'good':'muted'; return head('Approval',ok)+'<div class="warn '+ok+'">'+(d.note||'')+'</div>'; }

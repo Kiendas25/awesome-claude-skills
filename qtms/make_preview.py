@@ -44,6 +44,7 @@ MOCK = r"""
    '/paper/stop':()=>({running:false,equity:10000,cash:10000,n_trades:0,n_decisions:25,open_positions:{},starting_balance:10000}),
    '/paper/trades':()=>({trades:[]}),
    '/agents/learning/analyze':b=>({symbol:b.symbol,overfitting_risk_score:0.83,propose_disable:['mean_reversion','liquidity_sweep','statistical_arbitrage'],parameter_proposals:[1,2,3,4,5,6],risk_proposals:[1],can_enable_live:false,requires_manual_approval:true}),
+   '/agents/learning/meta-model':b=>({available:true,model:'logistic_regression (walk-forward)',horizon_bars:3,folds_used:4,n_samples:780,oos_auc_mean:0.508,oos_auc_min:0.491,oos_accuracy_mean:0.512,has_edge:false,top_features:[{feature:'vwap_dist',weight:0.31},{feature:'slope',weight:0.27},{feature:'momentum',weight:0.22}],verdict:'no reliable edge (coin flip) - honest null result',symbol:b.symbol}),
    '/agents/learning/discover':b=>Object.assign({},promo,{symbol:b.symbol}),
    '/agents/learning/promotion':()=>promo,
    '/autopilot/start':b=>{A.running=true;if(b&&b.symbols&&b.symbols.length)A.symbols=b.symbols;return{running:true,symbol:A.symbols[0]+' +'+(A.symbols.length-1)+' more',interval_seconds:20};},

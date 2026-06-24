@@ -3,6 +3,14 @@ from __future__ import annotations
 
 from .base import Strategy
 from .breakout import Breakout
+from .extended import (
+    BollingerBounce,
+    DonchianBreakout,
+    MACDTrend,
+    Momentum,
+    RSIReversion,
+    VWAPReversion,
+)
 from .liquidity_sweep import LiquiditySweep
 from .mean_reversion import MeanReversion
 from .statistical_arbitrage import StatisticalArbitrage
@@ -16,6 +24,13 @@ REGISTRY: dict[str, type[Strategy]] = {
     VolatilityExpansion.name: VolatilityExpansion,
     LiquiditySweep.name: LiquiditySweep,
     StatisticalArbitrage.name: StatisticalArbitrage,
+    # extended universe
+    Momentum.name: Momentum,
+    RSIReversion.name: RSIReversion,
+    DonchianBreakout.name: DonchianBreakout,
+    MACDTrend.name: MACDTrend,
+    BollingerBounce.name: BollingerBounce,
+    VWAPReversion.name: VWAPReversion,
 }
 
 

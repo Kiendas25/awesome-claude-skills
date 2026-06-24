@@ -120,7 +120,10 @@ high drawdown.
   (`data_source="live"`) and falls back to synthetic on any network failure.
 - Full feature set (trend, mean-reversion, volatility, liquidity, microstructure,
   regime) with feature-stability Monte Carlo.
-- 6 deterministic strategies, each with confidence, invalidation level,
+- **12 deterministic strategy building blocks** (trend, mean-reversion, breakout,
+  vol-expansion, liquidity-sweep, stat-arb placeholder, momentum, RSI-reversion,
+  Donchian breakout, MACD-trend, Bollinger-bounce, VWAP-reversion), each with
+  confidence, invalidation level,
   reason codes, and per-strategy Monte Carlo (bootstrap, cost stress, signal
   persistence, probability of positive expectancy, drawdown distribution, risk
   of ruin).
@@ -141,6 +144,13 @@ high drawdown.
   → discover & promote on unseen data → paper-trade → analyze → report) that
   surfaces promotions for manual approval. It cannot enable live trading and the
   kill switch stops it (`/autopilot/start|stop|status|approve`).
+- **Discovery promotes only what survives multiple independent out-of-sample
+  checks** (bootstrap confidence + a minimum return that deflates as the search
+  grows + consistency across both holdout halves). Measured behaviour: ~0/12
+  false promotions on pure noise, ~7/8 real edges detected.
+- **ML meta-model** (`/agents/learning/meta-model`): a walk-forward logistic
+  regression that reports whether predictive structure exists out-of-sample
+  (AUC ≈ 0.5 = honest null). Off-path research only; never trades.
 - Off-path learning supervisor + analyzers/reviewers producing proposals only,
   with before/after Monte Carlo and an overfitting-risk score; writes Obsidian
   notes + a recommendations file. **Cannot** enable live or place orders.

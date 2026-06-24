@@ -40,6 +40,13 @@ SEARCH_SPACE: dict[str, dict[str, list]] = {
     "volatility_expansion": {"entry_threshold": [0.2, 0.3, 0.45]},
     "liquidity_sweep": {"entry_threshold": [0.2, 0.3], "lookback": [10, 20]},
     "statistical_arbitrage": {"entry_threshold": [0.3, 0.4]},
+    # extended universe
+    "momentum": {"entry_threshold": [0.2, 0.3, 0.45], "lookback": [7, 14, 21]},
+    "rsi_reversion": {"entry_threshold": [0.2, 0.3], "period": [9, 14, 21]},
+    "donchian_breakout": {"entry_threshold": [0.2, 0.3, 0.45], "lookback": [15, 25, 40]},
+    "macd_trend": {"entry_threshold": [0.2, 0.3, 0.45]},
+    "bollinger_bounce": {"entry_threshold": [0.2, 0.3]},
+    "vwap_reversion": {"entry_threshold": [0.2, 0.3]},
 }
 
 
@@ -137,10 +144,12 @@ def discover_and_promote(
     # 1) search best variant per strategy on TRAIN; 2) validate survivors on TRAIN.
     survivors: list[dict] = []
     total_candidates = 0
+    n_strategies = 0  # how many strategies were searched (for multiple-testing)
     train_robustness: dict[str, float] = {}
     for name in cfg.active_strategies:
         if name not in REGISTRY:
             continue
+        n_strategies += 1
         best = optimize_strategy(name, train, cfg)
         total_candidates += best["candidates"]
         strat = _make(name, best["combo"], cfg)
@@ -180,13 +189,52 @@ def discover_and_promote(
     if holdout_mc.get("robustness_score", 0.0) < 0.5:
         reasons.append("composite holdout Monte Carlo robustness too low")
 
+    # Multiple-testing protection via THREE independent out-of-sample checks —
+    # the more strategies searched, the easier a lucky winner is on noise, so a
+    # single positive holdout is not enough:
+    #  (a) bootstrap prob_positive_expectancy on the holdout (noise≈0.1, edge≈0.9),
+    #  (b) a minimum holdout return that DEFLATES with search size (more
+    #      strategies searched -> a bigger demonstrated edge is required),
+    #  (c) consistency across BOTH halves of the holdout (luck rarely repeats).
+    holdout_ppe = float(holdout_mc.get("prob_positive_expectancy", 0.0))
+    if holdout_ppe < 0.60:
+        reasons.append(
+            f"holdout bootstrap confidence too low (prob_positive_expectancy="
+            f"{holdout_ppe:.2f} < 0.60)"
+        )
+
+    min_return = 0.03 * (n_strategies / 6.0)
+    if hm["total_return"] < min_return:
+        reasons.append(
+            f"holdout edge too small for the search size (return="
+            f"{hm['total_return']:.3f} < {min_return:.3f} for {n_strategies} strategies)"
+        )
+
+    half = len(holdout) // 2
+    h1 = holdout.iloc[:half].copy()
+    h2 = holdout.iloc[half:].copy()
+    h1.attrs["symbol"] = h2.attrs["symbol"] = holdout.attrs.get("symbol", "X")
+    r1 = run_backtest(_composite_positions(survivors, h1, weights, cfg), h1, cfg=cfg).metrics["total_return"]
+    r2 = run_backtest(_composite_positions(survivors, h2, weights, cfg), h2, cfg=cfg).metrics["total_return"]
+    if not (r1 > 0 and r2 > 0):
+        reasons.append(
+            f"inconsistent across holdout sub-windows (first half={r1:.3f}, second half={r2:.3f})"
+        )
+
     promoted = len(reasons) == 0
     return PromotionResult(
         promoted=promoted,
         survivors=survivors,
         weights=weights,
-        holdout_metrics={**hm, "mc_robustness": holdout_mc.get("robustness_score", 0.0)},
+        holdout_metrics={
+            **hm,
+            "mc_robustness": holdout_mc.get("robustness_score", 0.0),
+            "prob_positive_expectancy": holdout_ppe,
+            "min_return_required": min_return,
+            "subwindow_returns": [r1, r2],
+            "strategies_searched": n_strategies,
+        },
         train_metrics=train_bt.metrics,
-        reasons=reasons or ["passed all unseen-holdout gates"],
+        reasons=reasons or ["passed all unseen-holdout gates (multiple-testing aware)"],
         candidates_evaluated=total_candidates,
     )

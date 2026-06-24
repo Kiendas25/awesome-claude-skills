@@ -74,6 +74,13 @@ class QTMSConfig(BaseModel):
             "volatility_expansion",
             "liquidity_sweep",
             "statistical_arbitrage",
+            # extended universe (2x the building blocks for discovery)
+            "momentum",
+            "rsi_reversion",
+            "donchian_breakout",
+            "macd_trend",
+            "bollinger_bounce",
+            "vwap_reversion",
         ]
     )
     risk: RiskConfig = Field(default_factory=RiskConfig)

@@ -254,6 +254,14 @@ def learning_promotion():
     return LearningSupervisor.latest_promotion() or {"note": "no discovery run yet"}
 
 
+@router.post("/agents/learning/meta-model")
+def learning_meta_model(req: AnalyzeReq):
+    """Train an ML meta-model and report out-of-sample predictive power."""
+    cfg = get_config()
+    df = STATE.get_or_make(req.symbol)
+    return LearningSupervisor(cfg).meta_model(df)
+
+
 @router.post("/autopilot/start")
 def autopilot_start(req: AutopilotReq):
     """Start the autonomous RESEARCH loop (paper-only). It discovers, paper

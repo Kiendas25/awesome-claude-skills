@@ -80,6 +80,7 @@
    '/paper/stop':()=>({running:false,equity:10000,cash:10000,n_trades:0,n_decisions:25,open_positions:{},starting_balance:10000}),
    '/paper/trades':()=>({trades:[]}),
    '/agents/learning/analyze':b=>({symbol:b.symbol,overfitting_risk_score:0.83,propose_disable:['mean_reversion','liquidity_sweep','statistical_arbitrage'],parameter_proposals:[1,2,3,4,5,6],risk_proposals:[1],can_enable_live:false,requires_manual_approval:true}),
+   '/agents/learning/meta-model':b=>({available:true,model:'logistic_regression (walk-forward)',horizon_bars:3,folds_used:4,n_samples:780,oos_auc_mean:0.508,oos_auc_min:0.491,oos_accuracy_mean:0.512,has_edge:false,top_features:[{feature:'vwap_dist',weight:0.31},{feature:'slope',weight:0.27},{feature:'momentum',weight:0.22}],verdict:'no reliable edge (coin flip) - honest null result',symbol:b.symbol}),
    '/agents/learning/discover':b=>Object.assign({},promo,{symbol:b.symbol}),
    '/agents/learning/promotion':()=>promo,
    '/autopilot/start':b=>{A.running=true;if(b&&b.symbols&&b.symbols.length)A.symbols=b.symbols;return{running:true,symbol:A.symbols[0]+' +'+(A.symbols.length-1)+' more',interval_seconds:20};},
@@ -124,6 +125,7 @@
   <div class="sub">The agent searches strategies and only "promotes" what survives unseen data.</div>
   <button onclick="act('analyze','POST','/agents/learning/analyze',{symbol:S()})">Analyze results</button>
   <button onclick="act('discover','POST','/agents/learning/discover',{symbol:S()})">Discover &amp; promote</button>
+  <button onclick="act('meta','POST','/agents/learning/meta-model',{symbol:S()})">ML meta-model</button>
   <button onclick="act('promotion','GET','/agents/learning/promotion')">Latest promotion</button>
   <div class="warn">Promotion = survived an unseen test once. NOT a profit promise.</div></div>
  <div class="card" style="grid-column:1/3"><h3>5 · Autopilot <span class="muted" style="font-size:12px">(autonomous research — paper only)</span></h3>
@@ -209,6 +211,16 @@ const R={
      ['Rows',d.rows],['Last price',money(d.last_close)],['Timeframe',d.timeframe],
      ['From',d.first_time],['To',d.last_time],['Data quality',pct(d.data_quality)]])+
      '<div class="warn">Real market data loaded ✅. Now run step 2/4, or start the autopilot on LIVE.</div>'+raw(d);},
+ meta:d=>{ if(d.available===false) return head('ML meta-model unavailable','muted')+'<div class="warn">'+(d.note||'')+'</div>';
+   if(d.has_edge==null) return head('ML meta-model','muted')+'<div class="warn">'+(d.note||'')+'</div>'+raw(d);
+   const tf=(d.top_features||[]).map(f=>f.feature).join(', ');
+   return head(d.has_edge?'Predictive structure found ✅':'No reliable edge (≈coin flip)',d.has_edge?'good':'muted')+facts([
+     ['Out-of-sample AUC',n2(d.oos_auc_mean)+' (min '+n2(d.oos_auc_min)+')',cls(d.has_edge)],
+     ['OOS accuracy',pct(d.oos_accuracy_mean)],
+     ['Folds (walk-forward)',d.folds_used],
+     ['Samples',d.n_samples],
+     ['Top features',tf||'—']])+
+     '<div class="warn">0.50 AUC = random. Above ~0.52 across folds hints at real structure. Off-path research; never trades.</div>'+raw(d);},
  discover:d=>renderPromotion(d),
  promotion:d=>renderPromotion(d),
  autopilot:d=>{ pollAuto(); const ok=d.approved?'good':'muted'; return head('Approval',ok)+'<div class="warn '+ok+'">'+(d.note||'')+'</div>'; }

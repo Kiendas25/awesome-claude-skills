@@ -25,6 +25,7 @@ from ..reports import report_writer
 from ..validation import validate_strategy
 from ..strategies import build_active
 from . import post_trade_analyzer, risk_reviewer, strategy_researcher
+from .meta_learner import train_meta_model
 from .strategy_optimizer import discover_and_promote
 
 
@@ -163,6 +164,14 @@ class LearningSupervisor:
             tags=["promotion", "learning", "qtms"], subfolder="learning",
         )
         return payload
+
+    def meta_model(self, df: pd.DataFrame, horizon: int = 3) -> dict:
+        """Train + walk-forward score an ML meta-model on this market. Off-path
+        research only; reports whether predictive structure exists out-of-sample."""
+        result = train_meta_model(df, horizon=horizon)
+        result["symbol"] = str(df.attrs.get("symbol", "UNKNOWN"))
+        save_json("agents/meta_model_latest.json", result)
+        return result
 
     @staticmethod
     def latest_promotion() -> dict | None:

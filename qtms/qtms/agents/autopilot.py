@@ -40,6 +40,7 @@ class AutopilotState:
     history: list[dict] = field(default_factory=list)
     pending_approvals: list[dict] = field(default_factory=list)
     approved: list[dict] = field(default_factory=list)
+    scoreboard: dict = field(default_factory=dict)  # per-symbol stats over time
     last_error: str | None = None
     started_at: str | None = None
 
@@ -122,7 +123,10 @@ class Autopilot:
             "can_enable_live": self.CAN_ENABLE_LIVE,
         }
 
-        # 4) surface a promotion for MANUAL approval (never auto-applied)
+        # 4) update the per-coin leaderboard
+        self._update_scoreboard(symbol, promo)
+
+        # 5) surface a promotion for MANUAL approval (never auto-applied)
         if promo.promoted:
             with self._lock:
                 self.state.pending_approvals.append({
@@ -227,6 +231,19 @@ class Autopilot:
         return {"approved": latest, "note": "approved for PAPER use only; live still disabled"}
 
     # --- helpers -----------------------------------------------------------
+    def _update_scoreboard(self, symbol: str, promo) -> None:
+        with self._lock:
+            sb = self.state.scoreboard.setdefault(
+                symbol, {"cycles": 0, "promotions": 0, "best_return": 0.0, "strategies": {}}
+            )
+            sb["cycles"] += 1
+            if promo.promoted:
+                sb["promotions"] += 1
+                r = float((promo.holdout_metrics or {}).get("total_return", 0.0) or 0.0)
+                sb["best_return"] = max(sb["best_return"], r)
+                for s in promo.survivors:
+                    sb["strategies"][s["name"]] = sb["strategies"].get(s["name"], 0) + 1
+
     def _record(self, summary: dict) -> None:
         with self._lock:
             self.state.last_summary = summary
@@ -262,6 +279,11 @@ class Autopilot:
                 "last_summary": s.last_summary,
                 "pending_approvals": [p for p in s.pending_approvals if not p["approved"]],
                 "n_approved": len(s.approved),
+                "leaderboard": sorted(
+                    [{"symbol": k, **v} for k, v in s.scoreboard.items()],
+                    key=lambda x: (x["promotions"], x["best_return"]),
+                    reverse=True,
+                ),
                 "recent_cycles": s.history[-8:],
                 "last_error": s.last_error,
                 "can_enable_live": self.CAN_ENABLE_LIVE,

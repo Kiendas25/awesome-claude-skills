@@ -82,6 +82,22 @@ def test_start_uses_config_universe_by_default(cfg):
         ap.stop()
 
 
+def test_leaderboard_tracks_per_coin(cfg):
+    cfg.monte_carlo.n_paths = 10
+    ap = Autopilot(cfg)
+    ap.symbols = ["BTC/USDT", "ETH/USDT"]
+    ap.n_candles = 300
+    ap.paper_steps = 1
+    ap.run_one_cycle()
+    ap.run_one_cycle()
+    lb = ap.status()["leaderboard"]
+    syms = {row["symbol"] for row in lb}
+    assert syms == {"BTC/USDT", "ETH/USDT"}
+    for row in lb:
+        assert row["cycles"] >= 1
+        assert "promotions" in row and "best_return" in row
+
+
 def test_start_stop_lifecycle(cfg):
     cfg.monte_carlo.n_paths = 15
     ap = Autopilot(cfg)

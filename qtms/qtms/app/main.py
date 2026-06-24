@@ -23,7 +23,15 @@ app.include_router(router)
 
 
 DASHBOARD_HTML = """
-<!doctype html><html><head><meta charset="utf-8"><title>QTMS Dashboard</title>
+<!doctype html><html><head><meta charset="utf-8"><title>QTMS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#0b0e14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="QTMS">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="icon" href="/icon.svg">
 <style>
  body{font-family:system-ui,Arial;margin:0;background:#0b0e14;color:#cdd6f4}
  header{padding:16px 24px;background:#11151f;border-bottom:1px solid #1e2430}
@@ -34,8 +42,20 @@ DASHBOARD_HTML = """
  .paper{background:#1d3a2a;color:#a6e3a1}.live-off{background:#3a1d1d;color:#f38ba8}
  main{padding:24px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
  .card{background:#11151f;border:1px solid #1e2430;border-radius:8px;padding:16px}
- button{background:#1e66f5;color:#fff;border:0;padding:8px 12px;border-radius:6px;cursor:pointer;margin:4px 6px 4px 0;font-size:13px}
+ button{background:#1e66f5;color:#fff;border:0;padding:10px 14px;border-radius:8px;cursor:pointer;margin:4px 6px 4px 0;font-size:14px}
  button:hover{background:#3a7bff}
+ button:active{background:#1550c8}
+ @media (max-width:760px){
+   main{grid-template-columns:1fr;padding:12px;gap:12px}
+   header{padding:12px}
+   h1{font-size:16px}
+   button{padding:12px 14px;font-size:15px;width:100%;margin:4px 0}
+   .card{padding:12px}
+   .headline{font-size:18px}
+   .facts li{font-size:13px}
+   select{font-size:16px}  /* >=16px stops iOS auto-zoom */
+   .card[style*="grid-column"]{grid-column:1 !important}
+ }
  .warn{color:#f9e2af;font-size:12px;margin-top:8px}
  .result{background:#0b0e14;border:1px solid #1e2430;border-radius:8px;padding:16px;min-height:80px}
  .headline{font-size:20px;font-weight:600;margin-bottom:10px}
@@ -84,6 +104,8 @@ DASHBOARD_HTML = """
   <div class="warn">Promotion = survived an unseen test once. NOT a profit promise.</div></div>
  <div class="card" style="grid-column:1/3"><h3>5 · Autopilot <span class="muted" style="font-size:12px">(autonomous research — paper only)</span></h3>
   <div class="sub">Runs the loop by itself: refresh data → discover → paper-trade → analyze, on repeat. Promotions are surfaced for your approval. Never goes live; kill switch stops it.</div>
+  <div style="margin:8px 0"><span class="muted" style="font-size:12px">Coins to scan (none ticked = all top-10):</span>
+   <div id="coinpick" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px"></div></div>
   <button onclick="startAuto('synthetic')">▶ Start (synthetic)</button>
   <button onclick="startAuto('live')">▶ Start on LIVE data</button>
   <button onclick="stopAuto()">⏹ Stop</button>
@@ -96,9 +118,14 @@ DASHBOARD_HTML = """
 const S=()=>document.getElementById('sym').value;
 async function loadSymbols(){
  try{const d=await(await fetch('/symbols')).json();
-   const sel=document.getElementById('sym');
-   sel.innerHTML=d.symbols.map(s=>`<option>${s}</option>`).join('');
+   document.getElementById('sym').innerHTML=d.symbols.map(s=>`<option>${s}</option>`).join('');
+   const pick=document.getElementById('coinpick');
+   if(pick)pick.innerHTML=d.symbols.map(s=>
+     `<label class="tag" style="cursor:pointer"><input type="checkbox" value="${s}" style="margin-right:4px">${s.replace('/USDT','')}</label>`).join('');
  }catch(e){}
+}
+function pickedCoins(){
+ return [...document.querySelectorAll('#coinpick input:checked')].map(c=>c.value);
 }
 const pct=x=>(x==null||isNaN(x))?'—':(x*100).toFixed(1)+'%';
 const n2=(x,d=2)=>(x==null||isNaN(x))?'—':Number(x).toFixed(d);
@@ -179,6 +206,18 @@ function renderAuto(d){
  if(pend){const p=d.pending_approvals[d.pending_approvals.length-1];
    html+='<div class="warn good">Pending ['+(p.symbol||'?')+']: '+(p.survivors||[]).join(', ')+' — holdout return '+pct((p.holdout_metrics||{}).total_return)+'. Click "Approve latest promotion" to accept (paper only).</div>';}
  if(d.last_error)html+='<div class="warn bad">last error: '+d.last_error+'</div>';
+ const lb=d.leaderboard||[];
+ if(lb.length){
+   html+='<h4 style="margin:14px 0 4px">🏆 Per-coin leaderboard</h4>';
+   html+='<table><tr><th>Coin</th><th>Cycles</th><th>Promotions</th><th>Best unseen return</th><th>Top strategy</th></tr>';
+   html+=lb.map(r=>{
+     const top=Object.entries(r.strategies||{}).sort((a,b)=>b[1]-a[1])[0];
+     return `<tr><td>${r.symbol}</td><td>${r.cycles}</td>`+
+       `<td class="${r.promotions?'good':'muted'}">${r.promotions}</td>`+
+       `<td class="${r.best_return>0?'good':'muted'}">${pct(r.best_return)}</td>`+
+       `<td>${top?top[0]+' ×'+top[1]:'—'}</td></tr>`;
+   }).join('')+'</table>';
+ }
  html+='<div class="warn">Autonomous research only · paper money · live disabled · kill switch overrides.</div>';
  return html;
 }
@@ -192,10 +231,12 @@ async function pollAuto(){
 async function startAuto(src){
  src=src||'synthetic';
  const el=document.getElementById('autopilot');el.innerHTML='<span class="muted">Starting autopilot ('+src+')…</span>';
- // No symbol -> server rotates through the full top-10 universe.
+ // Ticked coins, or omit -> server rotates through the full top-10 universe.
+ const coins=pickedCoins();
  const body=(src==='live')
    ?{interval_seconds:30,data_source:'live',timeframe:'5m',source:'auto',drift:0}
    :{interval_seconds:20,drift:0.0008};
+ if(coins.length)body.symbols=coins;
  await fetch('/autopilot/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  if(!_autoTimer)_autoTimer=setInterval(pollAuto,4000);
  pollAuto();
@@ -249,3 +290,35 @@ def dashboard():
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard_alias():
     return DASHBOARD_HTML
+
+
+_ICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+<rect width="192" height="192" rx="40" fill="#0b0e14"/>
+<circle cx="96" cy="96" r="58" fill="none" stroke="#1e66f5" stroke-width="10"/>
+<line x1="138" y1="138" x2="170" y2="170" stroke="#1e66f5" stroke-width="12" stroke-linecap="round"/>
+<text x="96" y="112" font-family="Arial" font-size="52" font-weight="bold" fill="#a6e3a1" text-anchor="middle">Q</text>
+</svg>"""
+
+
+@app.get("/icon.svg")
+def icon():
+    from fastapi.responses import Response
+    return Response(_ICON_SVG, media_type="image/svg+xml")
+
+
+@app.get("/manifest.json")
+def manifest():
+    return {
+        "name": "QTMS — Quantum Trading Research",
+        "short_name": "QTMS",
+        "description": "Local-first paper-trading research. No real funds; live trading disabled.",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "orientation": "portrait",
+        "background_color": "#0b0e14",
+        "theme_color": "#0b0e14",
+        "icons": [
+            {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+        ],
+    }

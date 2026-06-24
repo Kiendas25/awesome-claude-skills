@@ -113,6 +113,13 @@ DASHBOARD_HTML = """
   <button onclick="stopAuto()">⏹ Stop</button>
   <button onclick="act('autopilot','POST','/autopilot/approve')">✔ Approve latest promotion</button>
   <div class="result" id="autopilot" style="margin-top:10px"><span class="muted">Autopilot is idle.</span></div></div>
+ <div class="card" style="grid-column:1/3"><h3>6 · Daily auto-curation <span class="muted" style="font-size:12px">(self-curating, paper only)</span></h3>
+  <div class="sub">Runs the campaign once a day on live data and builds a CONSENSUS verdict over many days. A strategy is only flagged ERASE when it's consistently bad — one bad day never erases anything.</div>
+  <button onclick="startSched()">▶ Start daily (live)</button>
+  <button onclick="act('sched','POST','/scheduler/run-now')">Run one now</button>
+  <button onclick="stopSched()">⏹ Stop</button>
+  <button onclick="act('sched','POST','/scheduler/apply-consensus')">✔ Apply consensus (prune ERASE)</button>
+  <div class="result" id="sched" style="margin-top:10px"><span class="muted">Scheduler idle. A daily run accumulates verdicts over real days.</span></div></div>
  <div class="card" style="grid-column:1/3"><h3>Result</h3>
   <div class="result" id="out"><span class="muted">Pick an action above. Tip: do them in order 1 → 2 → 3 → 4.</span></div></div>
 </main>
@@ -207,6 +214,11 @@ const R={
    return h+raw(d);},
  discover:d=>renderPromotion(d),
  promotion:d=>renderPromotion(d),
+ sched:d=>{ pollSched();
+   if(d.ran)return head('Daily campaign run complete','good')+'<div class="warn good">Verdicts recorded. Consensus updated below in the auto-curation panel.</div>'+raw(d);
+   if(d.applied!=null)return head(d.applied?'Consensus applied ✅':'Not applied',d.applied?'good':'muted')+'<div class="warn">'+(d.applied?('Pruned: '+(d.erased||[]).join(', ')+'. Active now: '+(d.active_now||[]).length+' strategies.'):(d.reason||''))+'</div>'+raw(d);
+   if(d.skipped)return head('Skipped','muted')+'<div class="warn">'+(d.reason||'')+'</div>';
+   return head('Scheduler','neutral')+raw(d);},
  autopilot:d=>{ pollAuto(); const ok=d.approved?'good':'muted'; return head('Approval',ok)+'<div class="warn '+ok+'">'+(d.note||'')+'</div>'; }
 };
 function renderAuto(d){
@@ -265,6 +277,43 @@ async function stopAuto(){
  await fetch('/autopilot/stop',{method:'POST'});
  if(_autoTimer){clearInterval(_autoTimer);_autoTimer=null;}
  pollAuto();
+}
+function renderSched(d){
+ const cons=d.consensus||{};
+ const rows=Object.entries(cons).sort((a,b)=>({KEEP:0,IMPROVE:1,ERASE:2}[a[1].verdict])-({KEEP:0,IMPROVE:1,ERASE:2}[b[1].verdict]));
+ let h=head(d.running?'Auto-curation RUNNING':'Auto-curation idle',d.running?'good':'muted');
+ h+=facts([
+   ['Schedule',`every ${d.interval_hours}h · ${d.data_source}`],
+   ['Runs so far',d.n_runs],
+   ['Last run',d.last_run?d.last_run.slice(0,16).replace('T',' '):'—'],
+   ['Next due',d.next_due?d.next_due.slice(0,16).replace('T',' '):'—']]);
+ if(rows.length){
+   h+='<h4 style="margin:12px 0 4px">Consensus verdicts (over '+d.history_len+' day(s))</h4>';
+   h+='<table><tr><th>Strategy</th><th>Consensus</th><th>K/I/E</th><th>Stability</th></tr>'+
+     rows.map(([s,v])=>`<tr><td>${s}</td><td class="${v.verdict=='KEEP'?'good':(v.verdict=='ERASE'?'bad':'')}">${v.verdict}</td><td>${v.keep}/${v.improve}/${v.erase}</td><td>${pct(v.stability)}</td></tr>`).join('')+'</table>';
+   h+='<div class="warn">A strategy needs ≥3 days and ≥80% ERASE to reach ERASE consensus. One bad day never erases it.</div>';
+ } else h+='<div class="warn">No runs yet. Click "Run one now" or "Start daily".</div>';
+ if(d.last_error)h+='<div class="warn bad">last error: '+d.last_error+'</div>';
+ return h;
+}
+let _schedTimer=null;
+async function pollSched(){
+ try{const d=await(await fetch('/scheduler/status')).json();
+   document.getElementById('sched').innerHTML=renderSched(d);
+   if(!d.running&&_schedTimer){clearInterval(_schedTimer);_schedTimer=null;}
+ }catch(e){}
+}
+async function startSched(){
+ document.getElementById('sched').innerHTML='<span class="muted">Starting daily auto-curation… (first run begins now)</span>';
+ await fetch('/scheduler/start',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({interval_hours:24,data_source:'live',days:1})});
+ if(!_schedTimer)_schedTimer=setInterval(pollSched,5000);
+ pollSched();
+}
+async function stopSched(){
+ await fetch('/scheduler/stop',{method:'POST'});
+ if(_schedTimer){clearInterval(_schedTimer);_schedTimer=null;}
+ pollSched();
 }
 function renderPromotion(d){
  if(d.note&&d.promoted==null) return head('No discovery run yet','muted')+'<div class="warn">'+d.note+'</div>';

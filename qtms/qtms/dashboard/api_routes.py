@@ -275,6 +275,48 @@ def campaign_latest():
     return load_json("agents/campaign_latest.json", default={"note": "no campaign run yet"})
 
 
+class SchedulerReq(BaseModel):
+    interval_hours: float = 24.0
+    data_source: str = "live"
+    days: int = 1
+    n_candles: int = 1000
+
+
+@router.post("/scheduler/start")
+def scheduler_start(req: SchedulerReq):
+    """Start the daily auto-curation scheduler (paper-only, never live)."""
+    from ..agents.scheduler import get_scheduler
+    return get_scheduler().start(interval_hours=req.interval_hours,
+                                 data_source=req.data_source, days=req.days,
+                                 n_candles=req.n_candles)
+
+
+@router.post("/scheduler/stop")
+def scheduler_stop():
+    from ..agents.scheduler import get_scheduler
+    return get_scheduler().stop()
+
+
+@router.get("/scheduler/status")
+def scheduler_status():
+    from ..agents.scheduler import get_scheduler
+    return get_scheduler().status()
+
+
+@router.post("/scheduler/run-now")
+def scheduler_run_now():
+    from ..agents.scheduler import get_scheduler
+    return get_scheduler().run_now()
+
+
+@router.post("/scheduler/apply-consensus")
+def scheduler_apply_consensus():
+    """Operator-initiated: prune consistently-ERASE strategies from the PAPER
+    research config. Never touches live trading."""
+    from ..agents.scheduler import get_scheduler
+    return get_scheduler().apply_consensus()
+
+
 @router.post("/agents/learning/meta-model")
 def learning_meta_model(req: AnalyzeReq):
     """Train an ML meta-model and report out-of-sample predictive power."""

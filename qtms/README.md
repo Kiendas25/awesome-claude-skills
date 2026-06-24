@@ -149,6 +149,12 @@ high drawdown.
   strategy on the evidence and assigns a **KEEP / IMPROVE / ERASE** verdict,
   with a per-coin promotion breakdown — a data-driven "what to keep, fix, or
   delete" report written to the Obsidian brain.
+- **Daily auto-curation scheduler** (`/scheduler/*`) that runs the campaign once
+  a day on live data, accumulates verdicts across real calendar days, and forms
+  a **consensus** — a strategy is only flagged ERASE when it is *consistently*
+  bad (≥3 days, ≥80% ERASE), so one unlucky day never erases anything. Pruning
+  the active set is a separate, operator-initiated step (never automatic, never
+  live).
 - **Discovery promotes only what survives multiple independent out-of-sample
   checks** (bootstrap confidence + a minimum return that deflates as the search
   grows + consistency across both holdout halves). Measured behaviour: ~0/12

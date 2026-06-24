@@ -60,6 +60,8 @@ class Autopilot:
         self.paper_steps = 12
         self.mc_paths = 20
         self.warmup = 150
+        # Symbol universe to rotate through (one symbol per cycle).
+        self.symbols = ["BTC/USDT"]
         # Data source: "synthetic" or "live" (real public OHLCV).
         self.data_source = "synthetic"
         self.timeframe = "5m"
@@ -83,7 +85,9 @@ class Autopilot:
             self.state.cycle += 1
             cycle = self.state.cycle
         seed = self.seed_base + cycle
-        symbol = self.state.symbol
+        # Rotate through the symbol universe — one coin per cycle.
+        universe = self.symbols or [self.state.symbol or "BTC/USDT"]
+        symbol = universe[(cycle - 1) % len(universe)]
 
         df, data_used, data_note = self._get_data(symbol, seed)
 
@@ -123,6 +127,7 @@ class Autopilot:
             with self._lock:
                 self.state.pending_approvals.append({
                     "cycle": cycle,
+                    "symbol": symbol,
                     "timestamp": summary["timestamp"],
                     "survivors": summary["survivors"],
                     "weights": promo.weights,
@@ -159,14 +164,19 @@ class Autopilot:
         return df, "synthetic", "synthetic data"
 
     # --- background loop ---------------------------------------------------
-    def start(self, symbol: str = "BTC/USDT", interval_seconds: float = 20.0,
+    def start(self, symbol: str | None = None, symbols: list[str] | None = None,
+              interval_seconds: float = 20.0,
               drift: float = 0.0008, n_candles: int = 1200, paper_steps: int = 12,
               data_source: str = "synthetic", timeframe: str = "5m",
               source: str = "auto", limit: int = 1000) -> dict:
         if self.state.running:
             return {"running": True, "note": "autopilot already running"}
+        # Resolve the symbol universe: explicit list > single symbol > config.
+        universe = symbols or ([symbol] if symbol else list(self.cfg.symbols))
+        self.symbols = universe
+        label = universe[0] + (f" +{len(universe) - 1} more" if len(universe) > 1 else "")
         self.state = AutopilotState(
-            running=True, symbol=symbol, interval_seconds=max(3.0, interval_seconds),
+            running=True, symbol=label, interval_seconds=max(3.0, interval_seconds),
             started_at=datetime.now(timezone.utc).isoformat(),
         )
         self.drift = drift
@@ -243,6 +253,8 @@ class Autopilot:
                 "running": s.running,
                 "cycle": s.cycle,
                 "symbol": s.symbol,
+                "symbols": self.symbols,
+                "last_symbol": (s.last_summary or {}).get("symbol"),
                 "data_source": self.data_source,
                 "timeframe": self.timeframe,
                 "interval_seconds": s.interval_seconds,

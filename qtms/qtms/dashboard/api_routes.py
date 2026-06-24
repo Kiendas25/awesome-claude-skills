@@ -59,7 +59,8 @@ class AnalyzeReq(BaseModel):
 
 
 class AutopilotReq(BaseModel):
-    symbol: str = "BTC/USDT"
+    symbol: str | None = None          # single symbol, or…
+    symbols: list[str] | None = None   # …a list to rotate through (defaults to top-10)
     interval_seconds: float = 20.0
     drift: float = 0.0008
     n_candles: int = 1200
@@ -90,6 +91,11 @@ def health():
 @router.get("/config")
 def config():
     return get_config().model_dump()
+
+
+@router.get("/symbols")
+def symbols():
+    return {"symbols": get_config().symbols}
 
 
 @router.post("/data/synthetic")
@@ -254,7 +260,7 @@ def autopilot_start(req: AutopilotReq):
     trades, analyzes, and surfaces promotions for manual approval. It can never
     enable live trading and the kill switch stops it."""
     return get_autopilot().start(
-        symbol=req.symbol, interval_seconds=req.interval_seconds,
+        symbol=req.symbol, symbols=req.symbols, interval_seconds=req.interval_seconds,
         drift=req.drift, n_candles=req.n_candles, paper_steps=req.paper_steps,
         data_source=req.data_source, timeframe=req.timeframe,
         source=req.source, limit=req.limit,

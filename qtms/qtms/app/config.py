@@ -56,7 +56,13 @@ class LiveConfig(BaseModel):
 
 class QTMSConfig(BaseModel):
     seed: int = 42
-    symbols: list[str] = Field(default_factory=lambda: ["BTC/USDT", "ETH/USDT"])
+    # Top-10 crypto by market cap (excluding stablecoins), quoted in USDT.
+    symbols: list[str] = Field(
+        default_factory=lambda: [
+            "BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT",
+            "DOGE/USDT", "ADA/USDT", "TRX/USDT", "AVAX/USDT", "LINK/USDT",
+        ]
+    )
     timeframe: str = "5m"
     data_dir: str = "data_store"
     brain_dir: str = "QTMS_BRAIN"

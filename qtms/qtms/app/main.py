@@ -54,28 +54,32 @@ DASHBOARD_HTML = """
 <span class="pill paper">RESEARCH / PAPER</span>
 <span class="pill live-off">LIVE DISABLED</span></h1>
 <div class="warn" id="statusbar">Loading…</div>
+<div style="margin-top:8px;font-size:13px">Symbol for steps 1–4:
+ <select id="sym" style="background:#0b0e14;color:#cdd6f4;border:1px solid #1e2430;border-radius:6px;padding:4px 8px">
+  <option>BTC/USDT</option></select>
+ <span class="muted">· Autopilot rotates through all top-10.</span></div>
 </header>
 <main>
  <div class="card"><h3>1 · Data</h3>
   <div class="sub">Synthetic data to experiment, or real market data from a public exchange (read-only).</div>
-  <button onclick="act('data','POST','/data/synthetic',{symbol:'BTC/USDT',n:800})">Generate random data</button>
-  <button onclick="act('data','POST','/data/synthetic',{symbol:'BTC/USDT',n:1600,drift:0.0012})">Generate trending data</button>
-  <button onclick="act('liveData','POST','/data/live',{symbol:'BTC/USDT',timeframe:'5m',limit:1000})">Fetch live data (real market)</button></div>
+  <button onclick="act('data','POST','/data/synthetic',{symbol:S(),n:800})">Generate random data</button>
+  <button onclick="act('data','POST','/data/synthetic',{symbol:S(),n:1600,drift:0.0012})">Generate trending data</button>
+  <button onclick="act('liveData','POST','/data/live',{symbol:S(),timeframe:'5m',limit:1000})">Fetch live data (real market)</button></div>
  <div class="card"><h3>2 · Test a strategy</h3>
   <div class="sub">Validate one strategy and stress-test it with Monte Carlo.</div>
-  <button onclick="act('backtest','POST','/backtest/run',{symbol:'BTC/USDT',strategy:'trend_following'})">Validate trend strategy</button>
-  <button onclick="act('mc','POST','/monte-carlo/run',{symbol:'BTC/USDT',strategy:'mean_reversion',n_paths:200})">Monte Carlo</button></div>
+  <button onclick="act('backtest','POST','/backtest/run',{symbol:S(),strategy:'trend_following'})">Validate trend strategy</button>
+  <button onclick="act('mc','POST','/monte-carlo/run',{symbol:S(),strategy:'mean_reversion',n_paths:200})">Monte Carlo</button></div>
  <div class="card"><h3>3 · Paper trade</h3>
   <div class="sub">Run virtual trades — no real money. Start, then step forward.</div>
-  <button onclick="act('paperStart','POST','/paper/start',{symbol:'BTC/USDT',warmup:150})">Start</button>
+  <button onclick="act('paperStart','POST','/paper/start',{symbol:S(),warmup:150})">Start</button>
   <button onclick="act('paperStep','POST','/paper/step',{steps:25})">Step forward x25</button>
   <button onclick="act('paperStatus','GET','/paper/status')">Status</button>
   <button onclick="act('paperTrades','GET','/paper/trades')">Trades</button>
   <button onclick="act('paperStatus','POST','/paper/stop')">Stop</button></div>
  <div class="card"><h3>4 · Learning agent</h3>
   <div class="sub">The agent searches strategies and only "promotes" what survives unseen data.</div>
-  <button onclick="act('analyze','POST','/agents/learning/analyze',{symbol:'BTC/USDT'})">Analyze results</button>
-  <button onclick="act('discover','POST','/agents/learning/discover',{symbol:'BTC/USDT'})">Discover &amp; promote</button>
+  <button onclick="act('analyze','POST','/agents/learning/analyze',{symbol:S()})">Analyze results</button>
+  <button onclick="act('discover','POST','/agents/learning/discover',{symbol:S()})">Discover &amp; promote</button>
   <button onclick="act('promotion','GET','/agents/learning/promotion')">Latest promotion</button>
   <div class="warn">Promotion = survived an unseen test once. NOT a profit promise.</div></div>
  <div class="card" style="grid-column:1/3"><h3>5 · Autopilot <span class="muted" style="font-size:12px">(autonomous research — paper only)</span></h3>
@@ -89,6 +93,13 @@ DASHBOARD_HTML = """
   <div class="result" id="out"><span class="muted">Pick an action above. Tip: do them in order 1 → 2 → 3 → 4.</span></div></div>
 </main>
 <script>
+const S=()=>document.getElementById('sym').value;
+async function loadSymbols(){
+ try{const d=await(await fetch('/symbols')).json();
+   const sel=document.getElementById('sym');
+   sel.innerHTML=d.symbols.map(s=>`<option>${s}</option>`).join('');
+ }catch(e){}
+}
 const pct=x=>(x==null||isNaN(x))?'—':(x*100).toFixed(1)+'%';
 const n2=(x,d=2)=>(x==null||isNaN(x))?'—':Number(x).toFixed(d);
 const money=x=>(x==null||isNaN(x))?'—':'$'+Number(x).toLocaleString(undefined,{maximumFractionDigits:2});
@@ -157,7 +168,8 @@ function renderAuto(d){
  let html=head(d.running?`Autopilot running · cycle ${d.cycle}`:`Autopilot stopped · ${d.cycle} cycles done`,d.running?'good':'muted');
  html+=facts([
    ['Status',d.running?'RUNNING':'stopped',d.running?'good':'muted'],
-   ['Symbol',d.symbol],
+   ['Universe',(d.symbols&&d.symbols.length?d.symbols.length+' coins':d.symbol)],
+   ['Now scanning',d.last_symbol||'—'],
    ['Data source',(d.data_source||'synthetic')+(d.data_source=='live'?' '+(d.timeframe||''):''),d.data_source=='live'?'good':'muted'],
    ['Last cycle verdict',last.promoted==null?'—':(last.promoted?'PROMOTED ✅':'no edge found'),last.promoted?'good':'muted'],
    ['Last paper equity',last.paper_equity==null?'—':money(last.paper_equity)],
@@ -165,7 +177,7 @@ function renderAuto(d){
    ['Approved (paper only)',d.n_approved],
    ['Can enable live?','NO (locked)','good']]);
  if(pend){const p=d.pending_approvals[d.pending_approvals.length-1];
-   html+='<div class="warn good">Pending: '+(p.survivors||[]).join(', ')+' — holdout return '+pct((p.holdout_metrics||{}).total_return)+'. Click "Approve latest promotion" to accept (paper only).</div>';}
+   html+='<div class="warn good">Pending ['+(p.symbol||'?')+']: '+(p.survivors||[]).join(', ')+' — holdout return '+pct((p.holdout_metrics||{}).total_return)+'. Click "Approve latest promotion" to accept (paper only).</div>';}
  if(d.last_error)html+='<div class="warn bad">last error: '+d.last_error+'</div>';
  html+='<div class="warn">Autonomous research only · paper money · live disabled · kill switch overrides.</div>';
  return html;
@@ -180,9 +192,10 @@ async function pollAuto(){
 async function startAuto(src){
  src=src||'synthetic';
  const el=document.getElementById('autopilot');el.innerHTML='<span class="muted">Starting autopilot ('+src+')…</span>';
+ // No symbol -> server rotates through the full top-10 universe.
  const body=(src==='live')
-   ?{symbol:'BTC/USDT',interval_seconds:30,data_source:'live',timeframe:'5m',source:'auto',drift:0}
-   :{symbol:'BTC/USDT',interval_seconds:20,drift:0.0008};
+   ?{interval_seconds:30,data_source:'live',timeframe:'5m',source:'auto',drift:0}
+   :{interval_seconds:20,drift:0.0008};
  await fetch('/autopilot/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  if(!_autoTimer)_autoTimer=setInterval(pollAuto,4000);
  pollAuto();
@@ -223,6 +236,7 @@ async function refreshStatus(){
  }catch(e){}
 }
 refreshStatus();
+loadSymbols();
 </script></body></html>
 """
 

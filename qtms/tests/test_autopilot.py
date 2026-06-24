@@ -56,6 +56,32 @@ def test_manual_approval_required(cfg):
         assert "live still disabled" in res["note"]
 
 
+def test_config_has_top10_symbols(cfg):
+    assert len(cfg.symbols) >= 10
+    assert "BTC/USDT" in cfg.symbols and "ETH/USDT" in cfg.symbols
+
+
+def test_autopilot_rotates_through_symbols(cfg):
+    cfg.monte_carlo.n_paths = 10
+    ap = Autopilot(cfg)
+    ap.symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+    ap.data_source = "synthetic"
+    ap.n_candles = 300
+    ap.paper_steps = 1
+    seen = [ap.run_one_cycle()["symbol"] for _ in range(3)]
+    assert seen == ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+
+
+def test_start_uses_config_universe_by_default(cfg):
+    ap = Autopilot(cfg)
+    out = ap.start(interval_seconds=3, data_source="synthetic")
+    try:
+        assert set(ap.symbols) == set(cfg.symbols)
+        assert len(ap.symbols) >= 10
+    finally:
+        ap.stop()
+
+
 def test_start_stop_lifecycle(cfg):
     cfg.monte_carlo.n_paths = 15
     ap = Autopilot(cfg)

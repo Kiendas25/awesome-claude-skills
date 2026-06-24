@@ -1,0 +1,305 @@
+
+<!doctype html><html><head><meta charset="utf-8"><title>QTMS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#0b0e14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="QTMS">
+
+
+
+<style>
+ body{font-family:system-ui,Arial;margin:0;background:#0b0e14;color:#cdd6f4}
+ header{padding:16px 24px;background:#11151f;border-bottom:1px solid #1e2430}
+ h1{font-size:18px;margin:0}
+ h3{margin:0 0 4px}
+ .sub{color:#7f849c;font-size:12px;margin:2px 0 10px}
+ .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;margin-left:8px}
+ .paper{background:#1d3a2a;color:#a6e3a1}.live-off{background:#3a1d1d;color:#f38ba8}
+ main{padding:24px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+ .card{background:#11151f;border:1px solid #1e2430;border-radius:8px;padding:16px}
+ button{background:#1e66f5;color:#fff;border:0;padding:10px 14px;border-radius:8px;cursor:pointer;margin:4px 6px 4px 0;font-size:14px}
+ button:hover{background:#3a7bff}
+ button:active{background:#1550c8}
+ @media (max-width:760px){
+   main{grid-template-columns:1fr;padding:12px;gap:12px}
+   header{padding:12px}
+   h1{font-size:16px}
+   button{padding:12px 14px;font-size:15px;width:100%;margin:4px 0}
+   .card{padding:12px}
+   .headline{font-size:18px}
+   .facts li{font-size:13px}
+   select{font-size:16px}  /* >=16px stops iOS auto-zoom */
+   .card[style*="grid-column"]{grid-column:1 !important}
+ }
+ .warn{color:#f9e2af;font-size:12px;margin-top:8px}
+ .result{background:#0b0e14;border:1px solid #1e2430;border-radius:8px;padding:16px;min-height:80px}
+ .headline{font-size:20px;font-weight:600;margin-bottom:10px}
+ .good{color:#a6e3a1}.bad{color:#f38ba8}.neutral{color:#89b4fa}.muted{color:#7f849c}
+ .facts{list-style:none;padding:0;margin:0}
+ .facts li{padding:6px 0;border-bottom:1px solid #181c28;display:flex;justify-content:space-between;gap:16px}
+ .facts li span:first-child{color:#9399b2}
+ .facts li span:last-child{font-weight:600;text-align:right}
+ .tag{display:inline-block;background:#1e2430;border-radius:6px;padding:2px 8px;margin:2px;font-size:12px}
+ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+ td,th{padding:6px 8px;border-bottom:1px solid #181c28;text-align:left}
+ details{margin-top:12px}summary{cursor:pointer;color:#7f849c;font-size:12px}
+ pre{background:#11151f;padding:10px;border-radius:6px;overflow:auto;max-height:240px;font-size:11px}
+</style></head><body>
+<div style="background:#3a2d1d;color:#f9e2af;padding:7px 12px;font-size:12px;text-align:center">
+📱 PREVIEW / DEMO MODE — sample data, no server. The real app connects to your QTMS engine.</div>
+<script>
+(function(){
+ const J=d=>({json:async()=>d,text:async()=>JSON.stringify(d)});
+ const coins=["BTC/USDT","ETH/USDT","BNB/USDT","SOL/USDT","XRP/USDT","DOGE/USDT","ADA/USDT","TRX/USDT","AVAX/USDT","LINK/USDT"];
+ const A={running:false,cycle:0,symbols:coins.slice(),scoreboard:{},pending:[],approved:0,last:null};
+ function lb(){return Object.entries(A.scoreboard).map(([s,v])=>({symbol:s,cycles:v.cycles,promotions:v.promotions,best_return:v.best_return,strategies:v.strategies})).sort((a,b)=>b.promotions-a.promotions||b.best_return-a.best_return);}
+ function advance(){
+   A.cycle++;
+   const sym=A.symbols[(A.cycle-1)%A.symbols.length];
+   const sb=A.scoreboard[sym]||(A.scoreboard[sym]={cycles:0,promotions:0,best_return:0,strategies:{}});
+   sb.cycles++;
+   const promoted=Math.random()<0.30;
+   if(promoted){sb.promotions++;const r=0.05+Math.random()*0.18;sb.best_return=Math.max(sb.best_return,r);
+     const st=Math.random()<0.5?'trend_following':'breakout';sb.strategies[st]=(sb.strategies[st]||0)+1;
+     A.pending.push({symbol:sym,survivors:['trend_following','breakout'],holdout_metrics:{total_return:r,max_drawdown:0.08,n_trades:40,mc_robustness:0.94},done:false});}
+   A.last={symbol:sym,promoted:promoted,paper_equity:10000+(Math.random()*60-30)};
+ }
+ function statusObj(){return {running:A.running,cycle:A.cycle,symbol:A.symbols[0]+' +'+(A.symbols.length-1)+' more',symbols:A.symbols,last_symbol:A.last?A.last.symbol:null,data_source:'synthetic',timeframe:'5m',last_summary:A.last?{promoted:A.last.promoted,paper_equity:A.last.paper_equity}:{},pending_approvals:A.pending.filter(x=>!x.done),n_approved:A.approved,leaderboard:lb(),can_enable_live:false,last_error:null};}
+ const promo={symbol:'BTC/USDT',promoted:true,candidates_evaluated:30,survivors:[{name:'trend_following'},{name:'breakout'}],weights:{trend_following:0.52,breakout:0.48},holdout_metrics:{total_return:0.149,max_drawdown:0.083,n_trades:43,mc_robustness:0.95},reasons:['passed all unseen-holdout gates'],can_enable_live:false};
+ const data={
+   '/health':()=>({status:'ok',mode:'paper/research',live_trading_enabled:false,kill_switch:false}),
+   '/symbols':()=>({symbols:coins}),
+   '/data/synthetic':b=>({symbol:b.symbol,rows:b.n||800,last_close:30150.2,data_robustness:{robustness_score:0.99,data_quality_score:1.0}}),
+   '/data/live':b=>({ok:true,symbol:b.symbol,source:'binance(demo)',timeframe:'5m',rows:1000,last_close:64210.5,first_time:'2024-06-01 00:00',last_time:'2024-06-04 11:25',data_quality:1.0}),
+   '/backtest/run':b=>({symbol:b.symbol,strategy:b.strategy,passed:false,score:0.58,metrics:{n_trades:24,total_return:0.031,win_rate:0.46,profit_factor:1.12,max_drawdown:0.066,expectancy:0.0012,avg_win:0.02,avg_loss:-0.015},fail_reasons:['sample too small: 24 < 30 trades']}),
+   '/monte-carlo/run':b=>({symbol:b.symbol,strategy:b.strategy,monte_carlo:{robustness_score:0.44,prob_positive_expectancy:0.11,risk_of_ruin:0.01,max_drawdown_p95:0.41,cost_survival:0.0,signal_persistence:0.78,n_trades:95}}),
+   '/paper/start':b=>({symbol:b.symbol,start_idx:150,n_candles:800}),
+   '/paper/step':()=>({steps:25,last:{idx:175,equity:10000,events:[],approved:false,conviction:0.21}}),
+   '/paper/status':()=>({running:true,equity:10000,cash:9998.6,n_trades:0,n_decisions:25,open_positions:{},starting_balance:10000}),
+   '/paper/stop':()=>({running:false,equity:10000,cash:10000,n_trades:0,n_decisions:25,open_positions:{},starting_balance:10000}),
+   '/paper/trades':()=>({trades:[]}),
+   '/agents/learning/analyze':b=>({symbol:b.symbol,overfitting_risk_score:0.83,propose_disable:['mean_reversion','liquidity_sweep','statistical_arbitrage'],parameter_proposals:[1,2,3,4,5,6],risk_proposals:[1],can_enable_live:false,requires_manual_approval:true}),
+   '/agents/learning/discover':b=>Object.assign({},promo,{symbol:b.symbol}),
+   '/agents/learning/promotion':()=>promo,
+   '/autopilot/start':b=>{A.running=true;if(b&&b.symbols&&b.symbols.length)A.symbols=b.symbols;return{running:true,symbol:A.symbols[0]+' +'+(A.symbols.length-1)+' more',interval_seconds:20};},
+   '/autopilot/stop':()=>{A.running=false;return statusObj();},
+   '/autopilot/status':()=>{if(A.running)advance();return statusObj();},
+   '/autopilot/approve':()=>{const p=A.pending.filter(x=>!x.done);if(p.length){p[p.length-1].done=true;A.approved++;return{approved:p[p.length-1],note:'approved for PAPER use only; live still disabled'};}return{approved:null,note:'no pending promotions to approve'};},
+   '/autopilot/reset-leaderboard':()=>{A.scoreboard={};A.pending=[];A.approved=0;A.cycle=0;return{reset:true};},
+ };
+ window.fetch=function(url,opt){opt=opt||{};let b={};try{if(opt.body)b=JSON.parse(opt.body);}catch(e){}
+   for(const k in data){if(url.indexOf(k)>=0)return Promise.resolve(J(data[k](b)));}
+   return Promise.resolve(J({note:'preview:'+url}));};
+})();
+</script>
+
+<header><h1>QTMS — Quantum Trading Multi-Layer Stacking
+<span class="pill paper">RESEARCH / PAPER</span>
+<span class="pill live-off">LIVE DISABLED</span></h1>
+<div class="warn" id="statusbar">Loading…</div>
+<div style="margin-top:8px;font-size:13px">Symbol for steps 1–4:
+ <select id="sym" style="background:#0b0e14;color:#cdd6f4;border:1px solid #1e2430;border-radius:6px;padding:4px 8px">
+  <option>BTC/USDT</option></select>
+ <span class="muted">· Autopilot rotates through all top-10.</span></div>
+</header>
+<main>
+ <div class="card"><h3>1 · Data</h3>
+  <div class="sub">Synthetic data to experiment, or real market data from a public exchange (read-only).</div>
+  <button onclick="act('data','POST','/data/synthetic',{symbol:S(),n:800})">Generate random data</button>
+  <button onclick="act('data','POST','/data/synthetic',{symbol:S(),n:1600,drift:0.0012})">Generate trending data</button>
+  <button onclick="act('liveData','POST','/data/live',{symbol:S(),timeframe:'5m',limit:1000})">Fetch live data (real market)</button></div>
+ <div class="card"><h3>2 · Test a strategy</h3>
+  <div class="sub">Validate one strategy and stress-test it with Monte Carlo.</div>
+  <button onclick="act('backtest','POST','/backtest/run',{symbol:S(),strategy:'trend_following'})">Validate trend strategy</button>
+  <button onclick="act('mc','POST','/monte-carlo/run',{symbol:S(),strategy:'mean_reversion',n_paths:200})">Monte Carlo</button></div>
+ <div class="card"><h3>3 · Paper trade</h3>
+  <div class="sub">Run virtual trades — no real money. Start, then step forward.</div>
+  <button onclick="act('paperStart','POST','/paper/start',{symbol:S(),warmup:150})">Start</button>
+  <button onclick="act('paperStep','POST','/paper/step',{steps:25})">Step forward x25</button>
+  <button onclick="act('paperStatus','GET','/paper/status')">Status</button>
+  <button onclick="act('paperTrades','GET','/paper/trades')">Trades</button>
+  <button onclick="act('paperStatus','POST','/paper/stop')">Stop</button></div>
+ <div class="card"><h3>4 · Learning agent</h3>
+  <div class="sub">The agent searches strategies and only "promotes" what survives unseen data.</div>
+  <button onclick="act('analyze','POST','/agents/learning/analyze',{symbol:S()})">Analyze results</button>
+  <button onclick="act('discover','POST','/agents/learning/discover',{symbol:S()})">Discover &amp; promote</button>
+  <button onclick="act('promotion','GET','/agents/learning/promotion')">Latest promotion</button>
+  <div class="warn">Promotion = survived an unseen test once. NOT a profit promise.</div></div>
+ <div class="card" style="grid-column:1/3"><h3>5 · Autopilot <span class="muted" style="font-size:12px">(autonomous research — paper only)</span></h3>
+  <div class="sub">Runs the loop by itself: refresh data → discover → paper-trade → analyze, on repeat. Promotions are surfaced for your approval. Never goes live; kill switch stops it.</div>
+  <div style="margin:8px 0"><span class="muted" style="font-size:12px">Coins to scan (none ticked = all top-10):</span>
+   <div id="coinpick" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px"></div></div>
+  <button onclick="startAuto('synthetic')">▶ Start (synthetic)</button>
+  <button onclick="startAuto('live')">▶ Start on LIVE data</button>
+  <button onclick="stopAuto()">⏹ Stop</button>
+  <button onclick="act('autopilot','POST','/autopilot/approve')">✔ Approve latest promotion</button>
+  <div class="result" id="autopilot" style="margin-top:10px"><span class="muted">Autopilot is idle.</span></div></div>
+ <div class="card" style="grid-column:1/3"><h3>Result</h3>
+  <div class="result" id="out"><span class="muted">Pick an action above. Tip: do them in order 1 → 2 → 3 → 4.</span></div></div>
+</main>
+<script>
+const S=()=>document.getElementById('sym').value;
+async function loadSymbols(){
+ try{const d=await(await fetch('/symbols')).json();
+   document.getElementById('sym').innerHTML=d.symbols.map(s=>`<option>${s}</option>`).join('');
+   const pick=document.getElementById('coinpick');
+   if(pick)pick.innerHTML=d.symbols.map(s=>
+     `<label class="tag" style="cursor:pointer"><input type="checkbox" value="${s}" style="margin-right:4px">${s.replace('/USDT','')}</label>`).join('');
+ }catch(e){}
+}
+function pickedCoins(){
+ return [...document.querySelectorAll('#coinpick input:checked')].map(c=>c.value);
+}
+const pct=x=>(x==null||isNaN(x))?'—':(x*100).toFixed(1)+'%';
+const n2=(x,d=2)=>(x==null||isNaN(x))?'—':Number(x).toFixed(d);
+const money=x=>(x==null||isNaN(x))?'—':'$'+Number(x).toLocaleString(undefined,{maximumFractionDigits:2});
+const cls=ok=>ok?'good':'bad';
+function robust(x){if(x>=0.7)return'strong';if(x>=0.5)return'moderate';return'weak';}
+function facts(rows){return '<ul class="facts">'+rows.map(r=>`<li><span>${r[0]}</span><span class="${r[2]||''}">${r[1]}</span></li>`).join('')+'</ul>';}
+function head(txt,c){return `<div class="headline ${c||'neutral'}">${txt}</div>`;}
+function raw(d){return `<details><summary>show raw data</summary><pre>${JSON.stringify(d,null,2)}</pre></details>`;}
+
+const R={
+ data:d=>head(`Generated ${d.rows} candles of ${d.symbol}`,'neutral')+facts([
+   ['Last price',money(d.last_close)],
+   ['Data robustness',n2((d.data_robustness||{}).robustness_score,2)+' ('+robust((d.data_robustness||{}).robustness_score)+')'],
+   ['Data quality',pct((d.data_robustness||{}).data_quality_score)]])+
+   '<div class="warn">Now try step 2 or jump to step 4.</div>'+raw(d),
+ backtest:d=>{const m=d.metrics||{};return head(d.strategy+' — '+(d.passed?'PASSED ✅':'DID NOT PASS ❌'),cls(d.passed))+facts([
+   ['Trades',m.n_trades],
+   ['Total return (after costs)',pct(m.total_return),cls(m.total_return>0)],
+   ['Win rate',pct(m.win_rate)],
+   ['Profit factor',n2(m.profit_factor)],
+   ['Max drawdown',pct(m.max_drawdown),'bad'],
+   ['Score',n2(d.score)]])+
+   (d.fail_reasons&&d.fail_reasons.length?'<div class="warn">Why it failed: '+d.fail_reasons.join('; ')+'</div>':'<div class="warn good">Cleared every validation gate.</div>')+raw(d);},
+ mc:d=>{const m=d.monte_carlo||{};return head('Monte Carlo · '+d.strategy,'neutral')+facts([
+   ['Robustness',n2(m.robustness_score)+' ('+robust(m.robustness_score)+')',cls(m.robustness_score>=0.5)],
+   ['Chance of positive expectancy',pct(m.prob_positive_expectancy)],
+   ['Risk of ruin',pct(m.risk_of_ruin),cls(m.risk_of_ruin<=0.05)],
+   ['Worst-case drawdown (95%)',pct(m.max_drawdown_p95),'bad'],
+   ['Survives higher costs',pct(m.cost_survival)],
+   ['Trades',m.n_trades]])+raw(d);},
+ paperStart:d=>head('Paper session started','good')+facts([
+   ['Symbol',d.symbol],['Candles loaded',d.n_candles],['Starting at bar',d.start_idx]])+
+   '<div class="warn">Now press "Step forward x25".</div>'+raw(d),
+ paperStep:d=>{const l=d.last||{};return head(`Stepped forward ${d.steps} bars`,'neutral')+facts([
+   ['Equity now',money(l.equity)],
+   ['Last decision',l.approved==null?'no decision':(l.approved?'TRADE':'stood aside')],
+   ['Conviction',l.conviction==null?'—':n2(l.conviction)],
+   ['Events',(l.events&&l.events.length)?l.events.join(', '):'none']])+
+   '<div class="warn">On random data the system usually stands aside — that is the honest default.</div>'+raw(d);},
+ paperStatus:d=>head(d.running?'Paper engine running':'Paper engine stopped',d.running?'good':'muted')+facts([
+   ['Equity',money(d.equity)],['Cash',money(d.cash)],
+   ['Open positions',Object.keys(d.open_positions||{}).length],
+   ['Closed trades',d.n_trades],['Decisions made',d.n_decisions]])+raw(d),
+ paperTrades:d=>{const t=d.trades||[];if(!t.length)return head('No closed trades yet','muted')+'<div class="warn">The system only trades when conviction passes the gate.</div>';
+   return head(`${t.length} closed trades`,'neutral')+'<table><tr><th>Symbol</th><th>Side</th><th>PnL</th><th>Return</th></tr>'+
+   t.map(x=>`<tr><td>${x.symbol}</td><td>${x.direction}</td><td class="${cls(x.pnl>0)}">${money(x.pnl)}</td><td>${pct(x.pnl_pct)}</td></tr>`).join('')+'</table>'+raw(d);},
+ analyze:d=>head('Analysis complete','neutral')+facts([
+   ['Overfitting risk',n2(d.overfitting_risk_score)+(d.overfitting_risk_score>=0.6?' (high)':' (ok)'),cls(d.overfitting_risk_score<0.6)],
+   ['Proposes disabling',(d.propose_disable||[]).join(', ')||'none'],
+   ['Parameter proposals',(d.parameter_proposals||[]).length],
+   ['Risk proposals',(d.risk_proposals||[]).length],
+   ['Can enable live?',d.can_enable_live?'YES':'NO (locked)','good']])+
+   '<div class="warn">All proposals need your manual approval. The agent never trades live.</div>'+raw(d),
+ liveData:d=>{ if(!d.ok) return head('Live data unavailable','bad')+'<div class="warn bad">'+d.error+'</div><div class="warn">'+(d.hint||'')+'</div>';
+   return head('Live data · '+d.symbol+' · '+d.source,'good')+facts([
+     ['Rows',d.rows],['Last price',money(d.last_close)],['Timeframe',d.timeframe],
+     ['From',d.first_time],['To',d.last_time],['Data quality',pct(d.data_quality)]])+
+     '<div class="warn">Real market data loaded ✅. Now run step 2/4, or start the autopilot on LIVE.</div>'+raw(d);},
+ discover:d=>renderPromotion(d),
+ promotion:d=>renderPromotion(d),
+ autopilot:d=>{ pollAuto(); const ok=d.approved?'good':'muted'; return head('Approval',ok)+'<div class="warn '+ok+'">'+(d.note||'')+'</div>'; }
+};
+function renderAuto(d){
+ const last=d.last_summary||{};
+ const pend=(d.pending_approvals||[]).length;
+ let html=head(d.running?`Autopilot running · cycle ${d.cycle}`:`Autopilot stopped · ${d.cycle} cycles done`,d.running?'good':'muted');
+ html+=facts([
+   ['Status',d.running?'RUNNING':'stopped',d.running?'good':'muted'],
+   ['Universe',(d.symbols&&d.symbols.length?d.symbols.length+' coins':d.symbol)],
+   ['Now scanning',d.last_symbol||'—'],
+   ['Data source',(d.data_source||'synthetic')+(d.data_source=='live'?' '+(d.timeframe||''):''),d.data_source=='live'?'good':'muted'],
+   ['Last cycle verdict',last.promoted==null?'—':(last.promoted?'PROMOTED ✅':'no edge found'),last.promoted?'good':'muted'],
+   ['Last paper equity',last.paper_equity==null?'—':money(last.paper_equity)],
+   ['Promotions awaiting approval',pend,pend?'good':'muted'],
+   ['Approved (paper only)',d.n_approved],
+   ['Can enable live?','NO (locked)','good']]);
+ if(pend){const p=d.pending_approvals[d.pending_approvals.length-1];
+   html+='<div class="warn good">Pending ['+(p.symbol||'?')+']: '+(p.survivors||[]).join(', ')+' — holdout return '+pct((p.holdout_metrics||{}).total_return)+'. Click "Approve latest promotion" to accept (paper only).</div>';}
+ if(d.last_error)html+='<div class="warn bad">last error: '+d.last_error+'</div>';
+ const lb=d.leaderboard||[];
+ if(lb.length){
+   html+='<h4 style="margin:14px 0 4px">🏆 Per-coin leaderboard</h4>';
+   html+='<table><tr><th>Coin</th><th>Cycles</th><th>Promotions</th><th>Best unseen return</th><th>Top strategy</th></tr>';
+   html+=lb.map(r=>{
+     const top=Object.entries(r.strategies||{}).sort((a,b)=>b[1]-a[1])[0];
+     return `<tr><td>${r.symbol}</td><td>${r.cycles}</td>`+
+       `<td class="${r.promotions?'good':'muted'}">${r.promotions}</td>`+
+       `<td class="${r.best_return>0?'good':'muted'}">${pct(r.best_return)}</td>`+
+       `<td>${top?top[0]+' ×'+top[1]:'—'}</td></tr>`;
+   }).join('')+'</table>';
+ }
+ html+='<div class="warn">Autonomous research only · paper money · live disabled · kill switch overrides.</div>';
+ return html;
+}
+let _autoTimer=null;
+async function pollAuto(){
+ try{const d=await(await fetch('/autopilot/status')).json();
+   document.getElementById('autopilot').innerHTML=renderAuto(d);
+   if(!d.running&&_autoTimer){clearInterval(_autoTimer);_autoTimer=null;}
+ }catch(e){}
+}
+async function startAuto(src){
+ src=src||'synthetic';
+ const el=document.getElementById('autopilot');el.innerHTML='<span class="muted">Starting autopilot ('+src+')…</span>';
+ // Ticked coins, or omit -> server rotates through the full top-10 universe.
+ const coins=pickedCoins();
+ const body=(src==='live')
+   ?{interval_seconds:30,data_source:'live',timeframe:'5m',source:'auto',drift:0}
+   :{interval_seconds:20,drift:0.0008};
+ if(coins.length)body.symbols=coins;
+ await fetch('/autopilot/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ if(!_autoTimer)_autoTimer=setInterval(pollAuto,4000);
+ pollAuto();
+}
+async function stopAuto(){
+ await fetch('/autopilot/stop',{method:'POST'});
+ if(_autoTimer){clearInterval(_autoTimer);_autoTimer=null;}
+ pollAuto();
+}
+function renderPromotion(d){
+ if(d.note&&d.promoted==null) return head('No discovery run yet','muted')+'<div class="warn">'+d.note+'</div>';
+ const m=d.holdout_metrics||{};
+ return head(d.promoted?'PROMOTED ✅':'NOT promoted ❌',cls(d.promoted))+facts([
+   ['Candidates evaluated',d.candidates_evaluated],
+   ['Survivors',(d.survivors||[]).map(s=>s.name).join(', ')||'none'],
+   ['Ensemble weights',Object.entries(d.weights||{}).map(([k,v])=>`${k} ${(v*100).toFixed(0)}%`).join('  ')||'—'],
+   ['Return on UNSEEN data',pct(m.total_return),cls(m.total_return>0)],
+   ['Trades (unseen)',m.n_trades],
+   ['Max drawdown (unseen)',pct(m.max_drawdown),'bad'],
+   ['Robustness (unseen)',n2(m.mc_robustness)]])+
+   '<div class="warn">'+((d.reasons||[]).join('; '))+'. Promotion ≠ profit guarantee — keep paper trading.</div>'+raw(d);
+}
+
+async function act(kind,method,url,body){
+ const el=document.getElementById('out');
+ el.innerHTML='<span class="muted">Running… (Monte Carlo / discovery can take a few seconds)</span>';
+ const opt={method,headers:{'Content-Type':'application/json'}};
+ if(body)opt.body=JSON.stringify(body);
+ try{
+   const r=await fetch(url,opt);const d=await r.json();
+   el.innerHTML=(R[kind]?R[kind](d):JSON.stringify(d,null,2));
+ }catch(e){el.innerHTML='<span class="bad">Error: '+e+'</span>';}
+}
+async function refreshStatus(){
+ try{const d=await(await fetch('/health')).json();
+   document.getElementById('statusbar').innerHTML=
+   `⚠️ No profit promised · Mode: <b>${d.mode}</b> · Live trading: <b class="bad">${d.live_trading_enabled?'ON':'OFF'}</b> · Kill switch: <b>${d.kill_switch?'ACTIVE':'inactive'}</b>`;
+ }catch(e){}
+}
+refreshStatus();
+loadSymbols();
+</script></body></html>

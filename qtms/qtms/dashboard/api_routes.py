@@ -283,6 +283,12 @@ def autopilot_approve():
     return get_autopilot().approve_latest()
 
 
+@router.post("/autopilot/reset-leaderboard")
+def autopilot_reset():
+    """Clear the persisted per-coin leaderboard and approvals."""
+    return get_autopilot().reset_leaderboard()
+
+
 @router.post("/live/request-approval")
 def live_request_approval():
     """Returns the live gate status and what is still blocking. Never enables

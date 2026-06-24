@@ -98,6 +98,24 @@ def test_leaderboard_tracks_per_coin(cfg):
         assert "promotions" in row and "best_return" in row
 
 
+def test_leaderboard_persists_across_instances(cfg):
+    from qtms.data.storage import save_json
+    save_json("agents/autopilot_state.json", {})  # clean slate
+    cfg.monte_carlo.n_paths = 10
+    ap = Autopilot(cfg)
+    ap.symbols = ["BTC/USDT"]
+    ap.n_candles = 300
+    ap.paper_steps = 1
+    ap.run_one_cycle()  # writes to disk
+    # A fresh instance loads the persisted leaderboard.
+    ap2 = Autopilot(cfg)
+    ap2._load_persisted()
+    assert "BTC/USDT" in ap2.state.scoreboard
+    assert ap2.state.scoreboard["BTC/USDT"]["cycles"] >= 1
+    ap2.reset_leaderboard()
+    assert ap2.state.scoreboard == {}
+
+
 def test_start_stop_lifecycle(cfg):
     cfg.monte_carlo.n_paths = 15
     ap = Autopilot(cfg)

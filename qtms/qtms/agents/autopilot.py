@@ -24,7 +24,7 @@ from ..app.config import QTMSConfig, get_config
 from ..app.safety import KILL_SWITCH
 from ..app.paper_engine import PaperTradingEngine
 from ..data.market_data import MarketDataAdapter
-from ..data.storage import save_json
+from ..data.storage import load_json, save_json
 from ..reports import obsidian_exporter as obs
 from . import post_trade_analyzer
 from .strategy_optimizer import discover_and_promote
@@ -190,6 +190,8 @@ class Autopilot:
         self.timeframe = timeframe
         self.source = source
         self.limit = limit
+        # Carry the per-coin leaderboard over from previous runs.
+        self._load_persisted()
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
@@ -227,6 +229,7 @@ class Autopilot:
             latest["approved"] = True
             latest["approved_at"] = datetime.now(timezone.utc).isoformat()
             self.state.approved.append(latest)
+        self._persist()
         save_json("agents/autopilot_latest.json", self._public_state())
         return {"approved": latest, "note": "approved for PAPER use only; live still disabled"}
 
@@ -243,6 +246,30 @@ class Autopilot:
                 sb["best_return"] = max(sb["best_return"], r)
                 for s in promo.survivors:
                     sb["strategies"][s["name"]] = sb["strategies"].get(s["name"], 0) + 1
+        self._persist()
+
+    # --- persistence: leaderboard survives restarts ------------------------
+    _STATE_FILE = "agents/autopilot_state.json"
+
+    def _persist(self) -> None:
+        with self._lock:
+            save_json(self._STATE_FILE, {
+                "scoreboard": self.state.scoreboard,
+                "approved": self.state.approved,
+            })
+
+    def _load_persisted(self) -> None:
+        saved = load_json(self._STATE_FILE, default={}) or {}
+        with self._lock:
+            self.state.scoreboard = saved.get("scoreboard", {})
+            self.state.approved = saved.get("approved", [])
+
+    def reset_leaderboard(self) -> dict:
+        with self._lock:
+            self.state.scoreboard = {}
+            self.state.approved = []
+        self._persist()
+        return {"reset": True}
 
     def _record(self, summary: dict) -> None:
         with self._lock:
